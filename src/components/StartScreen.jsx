@@ -5,7 +5,7 @@ import { computePlayerPattern, computeLevelRecommendation } from '../game/analyt
 
 export default function StartScreen({
   onStart, onThemeChange, currentTheme,
-  user, onLogout, onOpenFamily, onOpenAnalysis, onResume,
+  user, onLogout, onOpenFamily, onOpenAnalysis, onOpenOnline, onResume,
 }) {
   const [mode, setMode] = useState('pvp');
   const [boardSize, setBoardSize] = useState(15);
@@ -438,12 +438,16 @@ export default function StartScreen({
 
       <button className="primary-btn" onClick={handleStart} style={{ marginTop: 8 }}>대국 시작</button>
 
+      <button className="secondary-btn" onClick={onOpenOnline} style={{ marginTop: 12, width: '100%' }}>
+        🌐 온라인 대국 (다른 기기와 실시간 연결)
+      </button>
+
       <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
         <button className="secondary-btn" onClick={onOpenAnalysis}>📊 분석 / 전적</button>
         <button className="secondary-btn" onClick={onOpenFamily}>👥 가족 명단</button>
       </div>
 
-      <div className="footer">v0.3 · stage 3 · cloud sync</div>
+      <div className="footer">v0.5 · stage 5 · online play</div>
     </div>
   );
 }
