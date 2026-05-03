@@ -130,24 +130,19 @@ export default function GameScreen({ config, onExit }) {
     setOverlinePending(null);
   };
 
- useEffect(() => {
-    console.log('useEffect 실행:', { isAIMode, winner, turn, aiColorVal, aiThinking, overlinePending, historyLen: history.length });
+useEffect(() => {
     if (!isAIMode) return;
     if (winner) return;
     if (turn !== aiColorVal) return;
     if (overlinePending) return;
     if (aiThinking) return;
 
-    console.log('AI 시작!');
     setAiThinking(true);
     const timer = setTimeout(() => {
-      console.log('setTimeout 콜백 진입');
       try {
-        console.log('AI 호출:', { aiColorVal, aiLevel, aiStyle, renju, allowOverline });
         const move = chooseAIMove(board, aiColorVal, {
           level: aiLevel, style: aiStyle, renju, allowOverline, timeLimit: 3000,
         });
-        console.log('AI 응답:', move);
         if (move) {
           const result = placeStoneInternal(board, move.x, move.y, aiColorVal);
           if (!result.ended) {
@@ -161,10 +156,7 @@ export default function GameScreen({ config, onExit }) {
       }
     }, 350);
 
-    return () => {
-      console.log('cleanup 실행, timer 취소됨');
-      clearTimeout(timer);
-    };
+    return () => clearTimeout(timer);
   }, [turn, winner, isAIMode, aiColorVal, aiLevel, aiStyle, renju, allowOverline,
       board, history.length]);
   let canUndo = false;
