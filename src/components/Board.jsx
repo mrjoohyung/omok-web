@@ -16,6 +16,20 @@ export default function Board({
 
   return (
     <svg className="board-svg" width={totalSize} height={totalSize} viewBox={`0 0 ${totalSize} ${totalSize}`}>
+      {/* SVG에서 쓸 그라데이션 정의 */}
+      <defs>
+        <radialGradient id="stoneBlack" cx="35%" cy="30%" r="65%">
+          <stop offset="0%" stopColor="#5a5a5a" />
+          <stop offset="60%" stopColor="#1a1a1a" />
+          <stop offset="100%" stopColor="#000000" />
+        </radialGradient>
+        <radialGradient id="stoneWhite" cx="35%" cy="30%" r="65%">
+          <stop offset="0%" stopColor="#ffffff" />
+          <stop offset="60%" stopColor="#ececec" />
+          <stop offset="100%" stopColor="#c8c8c8" />
+        </radialGradient>
+      </defs>
+
       <g>
         {Array.from({ length: size }).map((_, i) => (
           <line key={`h${i}`} x1={xy(0)} y1={xy(i)} x2={xy(size - 1)} y2={xy(i)} stroke="var(--board-line)" strokeWidth={1} />
@@ -56,9 +70,9 @@ export default function Board({
         {board.map((row, y) =>
           row.map((cell, x) => {
             if (cell === EMPTY) return null;
-            const fill = cell === BLACK ? 'var(--stone-black)' : 'var(--stone-white)';
+            const fill = cell === BLACK ? 'url(#stoneBlack)' : 'url(#stoneWhite)';
             return (
-              <circle key={`s-${x}-${y}`} className="stone" cx={xy(x)} cy={xy(y)} r={cellSize * 0.44} fill={fill} stroke="rgba(0,0,0,0.25)" strokeWidth={0.5} />
+              <circle key={`s-${x}-${y}`} className="stone" cx={xy(x)} cy={xy(y)} r={cellSize * 0.44} fill={fill} stroke="rgba(0,0,0,0.35)" strokeWidth={0.6} />
             );
           })
         )}
