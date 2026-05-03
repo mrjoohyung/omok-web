@@ -15,7 +15,8 @@ export default function StartScreen({
   const [hintEnabled, setHintEnabled] = useState(true);
   const [showThreatsPvp, setShowThreatsPvp] = useState(false);
   const [pvpRecordMode, setPvpRecordMode] = useState('guest');
-  const [blackLabel, setBlackLabel] = useState('anonymous');
+  const [blackLabel, setBlackLabel] = useState('self');
+  const [blackLabel, setBlackLabel] = useState('self');
   const [whiteLabel, setWhiteLabel] = useState('anonymous');
 
   const [aiLevel, setAiLevel] = useState(3);
