@@ -99,7 +99,7 @@ body {
   flex-direction: column;
   align-items: center;
   padding: 32px 16px;
-  background: var(--bg);
+  : var(--bg);
 }
 
 .title {
@@ -130,7 +130,7 @@ body {
 }
 
 .panel {
-  background: var(--panel);
+  : var(--panel);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 24px 28px;
@@ -185,7 +185,7 @@ body {
   font-size: 13px;
   padding: 6px 14px;
   border: 1px solid var(--border);
-  background: transparent;
+  : transparent;
   color: var(--fg);
   cursor: pointer;
   border-radius: 3px;
@@ -194,12 +194,12 @@ body {
 }
 
 .choice-btn:hover:not(:disabled) {
-  background: var(--button-hover);
+  : var(--button-hover);
   border-color: var(--accent);
 }
 
 .choice-btn.active {
-  background: var(--accent);
+  : var(--accent);
   color: var(--bg);
   border-color: var(--accent);
   font-weight: 500;
@@ -215,7 +215,7 @@ body {
   font-size: 18px;
   letter-spacing: 0.05em;
   padding: 14px 36px;
-  background: var(--accent);
+  : var(--accent);
   color: var(--bg);
   border: none;
   border-radius: 4px;
@@ -235,7 +235,7 @@ body {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   padding: 8px 16px;
-  background: transparent;
+  : transparent;
   color: var(--fg);
   border: 1px solid var(--border);
   border-radius: 3px;
@@ -271,7 +271,7 @@ body {
   padding: 10px 24px;
   border: 1px solid var(--border);
   border-radius: 4px;
-  background: var(--panel);
+  : var(--panel);
   letter-spacing: 0.02em;
 }
 
@@ -283,8 +283,8 @@ body {
   flex-shrink: 0;
 }
 
-.turn-stone.black { background: var(--stone-black); }
-.turn-stone.white { background: var(--stone-white); }
+.turn-stone.black { : var(--stone-black); }
+.turn-stone.white { : var(--stone-white); }
 
 .turn-indicator .winner-tag {
   font-size: 13px;
@@ -316,8 +316,32 @@ body {
   padding: 24px;
   border-radius: 4px;
   box-shadow: 0 12px 40px var(--board-shadow);
+  width: 100%;
+  max-width: 700px;
+  box-sizing: border-box;
 }
 
+@media (max-width: 600px) {
+  .board-wrap {
+    padding: 12px;
+  }
+  .app-shell {
+    padding: 16px 8px !important;
+  }
+  .panel {
+    padding: 16px !important;
+  }
+  .title {
+    font-size: 32px !important;
+  }
+  .title .han {
+    font-size: 26px !important;
+  }
+  .turn-indicator {
+    font-size: 18px !important;
+    padding: 8px 14px !important;
+  }
+}
 .board-svg {
   display: block;
 }
