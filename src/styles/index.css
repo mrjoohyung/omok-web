@@ -326,20 +326,20 @@ body {
     padding: 12px;
   }
   .app-shell {
-    padding: 16px 8px !important;
+    padding: 16px 8px;
   }
   .panel {
-    padding: 16px !important;
+    padding: 16px 18px;
   }
   .title {
-    font-size: 32px !important;
+    font-size: 32px;
   }
   .title .han {
-    font-size: 26px !important;
+    font-size: 26px;
   }
   .turn-indicator {
-    font-size: 18px !important;
-    padding: 8px 14px !important;
+    font-size: 18px;
+    padding: 8px 14px;
   }
 }
 .board-svg {
