@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { LEVEL_CONFIG } from '../game/ai.js';
 import { listFamily, loadCurrentGame, listRecentGames, clearCurrentGame } from '../firebase/store.js';
-import { computePlayerPattern } from '../game/analytics.js';
+import { computePlayerPattern, computeLevelRecommendation } from '../game/analytics.js';
 
 export default function StartScreen({
   onStart, onThemeChange, currentTheme,
@@ -26,6 +26,8 @@ export default function StartScreen({
   const [showThreatsPvc, setShowThreatsPvc] = useState(false);
   const [exploitMode, setExploitMode] = useState('normal'); // 'normal' | 'exploit'
   const [playerPattern, setPlayerPattern] = useState(null);
+  const [levelRecommendation, setLevelRecommendation] = useState(null);
+  const [allGamesForRec, setAllGamesForRec] = useState([]);
 
   const [familyList, setFamilyList] = useState([]);
   const [pendingResume, setPendingResume] = useState(null);
@@ -42,14 +44,28 @@ export default function StartScreen({
         const cur = await loadCurrentGame(user);
         if (mounted && cur) setPendingResume(cur);
       } catch (e) { console.warn('진행 중 게임 확인 실패:', e); }
-      try {
+     try {
         const games = await listRecentGames(user, 1000);
+        if (!mounted) return;
+        setAllGamesForRec(games);
         const pattern = computePlayerPattern(games);
-        if (mounted) setPlayerPattern(pattern);
+        setPlayerPattern(pattern);
       } catch (e) { console.warn('패턴 분석 로드 실패:', e); }
     })();
     return () => { mounted = false; };
   }, [user]);
+  return () => { mounted = false; };
+  }, [user]);
+
+  // AI 레벨 바뀌면 추천 재계산
+  useEffect(() => {
+    if (allGamesForRec.length === 0) {
+      setLevelRecommendation(null);
+      return;
+    }
+    const rec = computeLevelRecommendation(allGamesForRec, aiLevel);
+    setLevelRecommendation(rec);
+  }, [aiLevel, allGamesForRec]);
 
   // "나" 라벨은 항상 자동으로 추가됨 (가족 명단에 없어도)
   const meName = user?.displayName && user.type === 'google' ? user.displayName : '나';
@@ -332,6 +348,44 @@ export default function StartScreen({
               ))}
             </div>
           </div>
+          {levelRecommendation?.enoughData && (
+            <div style={{
+              padding: '10px 14px',
+              background: 'var(--bg-2)',
+              border: '1px solid var(--accent)',
+              borderRadius: 3,
+              marginBottom: 12,
+              fontSize: 13,
+              color: 'var(--fg)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              flexWrap: 'wrap',
+            }}>
+              <span style={{ fontSize: 16 }}>💡</span>
+              <span style={{ flex: 1, minWidth: 200, lineHeight: 1.5 }}>
+                {levelRecommendation.reason}
+              </span>
+              {levelRecommendation.suggestion !== aiLevel && (
+                <button
+                  onClick={() => setAiLevel(levelRecommendation.suggestion)}
+                  style={{
+                    background: 'var(--accent)',
+                    color: 'var(--bg)',
+                    border: 'none',
+                    padding: '6px 14px',
+                    borderRadius: 3,
+                    fontSize: 12,
+                    fontFamily: 'JetBrains Mono, monospace',
+                    letterSpacing: '0.06em',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Lv{levelRecommendation.suggestion}로 변경
+                </button>
+              )}
+            </div>
+          )}
           <div className="option-row">
             <div><label>AI 플레이 스타일</label>
               <div className="hint-text">
