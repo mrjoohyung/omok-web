@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import Board from './Board.jsx';
 import {
   EMPTY, BLACK, WHITE, createBoard, cloneBoard, checkWin, isBoardFull,
-  isForbidden, findThreatCells, coordLabel,
+  isForbidden, findThreatCells, coordLabel, summarizeMove,
 } from '../game/gameLogic.js';
 import { getHint } from '../game/hint.js';
 import { chooseAIMove } from '../game/ai.js';
@@ -16,6 +16,7 @@ export default function GameScreen({ config, onExit }) {
   const isAIMode = mode === 'pvc';
   const userColorVal = userColor === 'white' ? WHITE : BLACK;
   const aiColorVal = userColor === 'white' ? BLACK : WHITE;
+  const overlineCheckOn = !allowOverline || renju;
 
   const [board, setBoard] = useState(() => createBoard(boardSize));
   const [history, setHistory] = useState([]);
@@ -23,13 +24,14 @@ export default function GameScreen({ config, onExit }) {
   const [winner, setWinner] = useState(null);
   const [winningLine, setWinningLine] = useState(null);
   const [winReason, setWinReason] = useState(null);
-  const [undoUsed, setUndoUsed] = useState(0);
+  const [undoUsed, setUndoUsed] = useState(() => isAIMode ? 0 : { [BLACK]: 0, [WHITE]: 0 });
   const [hintsLeft, setHintsLeft] = useState({ [BLACK]: 3, [WHITE]: 3 });
   const [hintCell, setHintCell] = useState(null);
   const [threatVisible, setThreatVisible] = useState(showThreats);
   const [aiThinking, setAiThinking] = useState(false);
-  const aiTimerRef = useRef(null);
+  const [overlinePending, setOverlinePending] = useState(null);
 
+  const aiTimerRef = useRef(null);
   const lastMove = history.length > 0 ? history[history.length - 1] : null;
 
   const forbiddenCells = useMemo(() => {
@@ -64,19 +66,20 @@ export default function GameScreen({ config, onExit }) {
       setWinner(win.winner);
       setWinningLine(win.line);
       setWinReason('five');
-      return { ended: true, board: next };
+      return { ended: true };
     } else if (isBoardFull(next)) {
       setWinner('draw');
       setWinReason('draw');
-      return { ended: true, board: next };
+      return { ended: true };
     }
-    return { ended: false, board: next };
+    return { ended: false };
   }, [renju, allowOverline]);
 
   const handleUserClick = useCallback((x, y) => {
     if (winner) return;
     if (board[y][x] !== EMPTY) return;
     if (aiThinking) return;
+    if (overlinePending) return;
     if (isAIMode && turn !== userColorVal) return;
 
     if (renju && turn === BLACK) {
@@ -96,17 +99,43 @@ export default function GameScreen({ config, onExit }) {
       }
     }
 
+    if (overlineCheckOn && !(renju && turn === BLACK)) {
+      const tmp = cloneBoard(board);
+      tmp[y][x] = turn;
+      const sum = summarizeMove(tmp, x, y, turn);
+      if (sum.overline && !sum.exactlyFive) {
+        setOverlinePending({ x, y, color: turn });
+        return;
+      }
+    }
+
     const result = placeStoneInternal(board, x, y, turn);
     if (!result.ended) {
       setTurn(turn === BLACK ? WHITE : BLACK);
     }
-  }, [board, turn, winner, renju, allowOverline, isAIMode, practiceMode, userColorVal, aiThinking, placeStoneInternal]);
+  }, [board, turn, winner, renju, allowOverline, isAIMode, practiceMode, userColorVal,
+      aiThinking, overlinePending, overlineCheckOn, placeStoneInternal]);
+
+  const handleOverlineConfirmKeep = () => {
+    if (!overlinePending) return;
+    const { x, y, color } = overlinePending;
+    setOverlinePending(null);
+    const result = placeStoneInternal(board, x, y, color);
+    if (!result.ended) {
+      setTurn(color === BLACK ? WHITE : BLACK);
+    }
+  };
+
+  const handleOverlineCancel = () => {
+    setOverlinePending(null);
+  };
 
   useEffect(() => {
     if (!isAIMode) return;
     if (winner) return;
     if (turn !== aiColorVal) return;
     if (aiThinking) return;
+    if (overlinePending) return;
 
     setAiThinking(true);
     aiTimerRef.current = setTimeout(() => {
@@ -126,11 +155,26 @@ export default function GameScreen({ config, onExit }) {
     }, 350);
 
     return () => { if (aiTimerRef.current) clearTimeout(aiTimerRef.current); };
-  }, [turn, winner, isAIMode, aiColorVal, aiLevel, aiStyle, renju, allowOverline, board, aiThinking, placeStoneInternal]);
+  }, [turn, winner, isAIMode, aiColorVal, aiLevel, aiStyle, renju, allowOverline,
+      board, aiThinking, overlinePending, placeStoneInternal]);
 
-  const canUndo = !winner && !aiThinking && history.length > 0
-    && (undoLimit === -1 || undoUsed < undoLimit)
-    && (!isAIMode || (isAIMode && turn === userColorVal && history.length >= 1));
+  let canUndo = false;
+  let undoCountText = '';
+  if (!winner && !aiThinking && history.length > 0 && !overlinePending) {
+    if (isAIMode) {
+      if (turn === userColorVal && history.length >= 1) {
+        canUndo = (undoLimit === -1) || (undoUsed < undoLimit);
+        undoCountText = undoLimit === -1 ? '' : `(${Math.max(0, undoLimit - undoUsed)}/${undoLimit})`;
+      }
+    } else {
+      const lastColor = history[history.length - 1].color;
+      const used = undoUsed[lastColor] ?? 0;
+      canUndo = (undoLimit === -1) || (used < undoLimit);
+      undoCountText = undoLimit === -1
+        ? ''
+        : `${lastColor === BLACK ? '흑' : '백'} ${Math.max(0, undoLimit - used)}/${undoLimit}`;
+    }
+  }
 
   const handleUndo = () => {
     if (!canUndo) return;
@@ -156,13 +200,14 @@ export default function GameScreen({ config, onExit }) {
       setHistory(newHistory);
       setTurn(removed.color);
       setHintCell(null);
-      setUndoUsed(u => u + 1);
+      setUndoUsed(u => ({ ...u, [removed.color]: (u[removed.color] ?? 0) + 1 }));
     }
   };
 
   const handleResign = () => {
     if (winner) return;
     if (aiThinking) return;
+    if (overlinePending) return;
     const resignerName = isAIMode ? '내' : (turn === BLACK ? '흑' : '백');
     if (!confirm(`${resignerName}가 항복합니다. 정말 진행할까요?`)) return;
     if (isAIMode) setWinner(aiColorVal);
@@ -170,7 +215,7 @@ export default function GameScreen({ config, onExit }) {
     setWinReason('resign');
   };
 
-  const canHint = !winner && !aiThinking && hintsLeft[turn] > 0
+  const canHint = !winner && !aiThinking && !overlinePending && hintsLeft[turn] > 0
     && (!isAIMode || turn === userColorVal);
 
   const handleHint = () => {
@@ -221,14 +266,14 @@ export default function GameScreen({ config, onExit }) {
             board={board} size={boardSize} lastMove={lastMove} winningLine={winningLine}
             onCellClick={handleUserClick} threats={threatsForDisplay}
             forbiddenCells={forbiddenCells} hintCell={hintCell}
-            disabled={!!winner || aiThinking || (isAIMode && turn !== userColorVal)}
+            disabled={!!winner || aiThinking || !!overlinePending || (isAIMode && turn !== userColorVal)}
           />
         </div>
         <div className="controls">
           <button className="secondary-btn" onClick={handleUndo} disabled={!canUndo}>
-            ↶ 무르기 {undoLimit !== -1 && `(${Math.max(0, undoLimit - undoUsed)}/${undoLimit})`}
+            ↶ 무르기 {undoCountText}
           </button>
-          <button className="secondary-btn" onClick={handleResign} disabled={!!winner || aiThinking}>⚑ 항복</button>
+          <button className="secondary-btn" onClick={handleResign} disabled={!!winner || aiThinking || !!overlinePending}>⚑ 항복</button>
           {hintEnabled && (
             <button className="secondary-btn" onClick={handleHint} disabled={!canHint}>
               ◎ 힌트 ({isAIMode ? userHintsLeft : hintsLeft[turn]}/3)
@@ -246,6 +291,26 @@ export default function GameScreen({ config, onExit }) {
           <button className="secondary-btn" onClick={handleNewGame}>✕ 메뉴로</button>
         </div>
       </div>
+
+      {overlinePending && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <h3>6목 이상</h3>
+            <p>
+              그 자리에 두면 6목 이상이 되어 <b>승리로 인정되지 않는</b> 모드입니다.
+              <br />그래도 두시겠어요?
+            </p>
+            <p style={{ fontSize: 12, color: 'var(--fg-muted)', fontFamily: 'JetBrains Mono, monospace' }}>
+              취소를 누르면 다른 자리에 두실 수 있습니다 (무르기 횟수 미차감).
+            </p>
+            <div className="modal-actions">
+              <button className="secondary-btn" onClick={handleOverlineCancel}>취소</button>
+              <button className="primary-btn" onClick={handleOverlineConfirmKeep}>그대로 두기</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {winner && resultMessage && (
         <div className="modal-backdrop">
           <div className="modal">
