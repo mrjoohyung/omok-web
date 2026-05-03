@@ -119,3 +119,167 @@ export function computeRecentChange(series, windowSize = 5) {
   else trend = '안정적';
   return { current: latest.recent5, prev: prev.recent5, diff, trend };
 }
+// =======================================================================
+// 패턴 분석 (B-2c: AI 약점 공략용)
+// =======================================================================
+
+const MIN_GAMES_FOR_PATTERN = 20;
+const PATTERN_WINDOW = 30;
+
+export function computePlayerPattern(games) {
+  const aiGames = games.filter(g => g.mode === 'pvc' && Array.isArray(g.moves) && g.moves.length > 0);
+  if (aiGames.length < MIN_GAMES_FOR_PATTERN) {
+    return {
+      enoughData: false,
+      have: aiGames.length,
+      need: MIN_GAMES_FOR_PATTERN,
+    };
+  }
+
+  const recent = aiGames.slice(0, PATTERN_WINDOW);
+  const lostGames = recent.filter(g => g.userWon === false && g.winner !== 'draw');
+  const wonGames = recent.filter(g => g.userWon === true);
+
+  // 1) 방향 약점
+  const dirCounts = { horizontal: 0, vertical: 0, diagonal: 0 };
+  for (const g of lostGames) {
+    const dir = inferWinningDirection(g);
+    if (dir) dirCounts[dir]++;
+  }
+  const totalDirs = dirCounts.horizontal + dirCounts.vertical + dirCounts.diagonal;
+  const dirWeights = { horizontal: 1.0, vertical: 1.0, diagonal: 1.0 };
+  if (totalDirs > 0) {
+    for (const k of Object.keys(dirCounts)) {
+      const ratio = dirCounts[k] / totalDirs;
+      if (ratio > 0.40) dirWeights[k] = 1.2;
+    }
+  }
+
+  // 2) 공수 비율
+  let attackMoves = 0;
+  let defenseMoves = 0;
+  for (const g of recent) {
+    const userColor = g.userColor === 'white' ? 2 : 1;
+    const stats = countAttackVsDefense(g.moves, userColor, g.boardSize || 15);
+    attackMoves += stats.attack;
+    defenseMoves += stats.defense;
+  }
+  const totalAD = attackMoves + defenseMoves;
+  let playerType = 'balanced';
+  if (totalAD > 0) {
+    const attackRatio = attackMoves / totalAD;
+    if (attackRatio >= 0.65) playerType = 'attacker';
+    else if (attackRatio <= 0.35) playerType = 'defender';
+  }
+
+  // 3) 첫 수 패턴
+  let centerFirst = 0;
+  let outsideFirst = 0;
+  for (const g of recent) {
+    const firstMove = g.moves[0];
+    if (!firstMove) continue;
+    const size = g.boardSize || 15;
+    const center = Math.floor(size / 2);
+    const dist = Math.max(Math.abs(firstMove.x - center), Math.abs(firstMove.y - center));
+    if (dist <= 2) centerFirst++;
+    else outsideFirst++;
+  }
+  let openingPref = 'mixed';
+  const totalOpen = centerFirst + outsideFirst;
+  if (totalOpen > 0) {
+    const centerRatio = centerFirst / totalOpen;
+    if (centerRatio >= 0.75) openingPref = 'center';
+    else if (centerRatio <= 0.25) openingPref = 'outside';
+  }
+
+  // 4) 종반 약점
+  let endgameWeak = false;
+  if (lostGames.length >= 5 && wonGames.length >= 5) {
+    const avgLossLen = lostGames.reduce((s, g) => s + (g.moves?.length || 0), 0) / lostGames.length;
+    const avgWinLen = wonGames.reduce((s, g) => s + (g.moves?.length || 0), 0) / wonGames.length;
+    if (avgLossLen > avgWinLen * 1.3) endgameWeak = true;
+  }
+
+  return {
+    enoughData: true,
+    have: aiGames.length,
+    dirWeights,
+    dirCounts,
+    playerType,
+    attackRatio: totalAD > 0 ? attackMoves / totalAD : 0.5,
+    openingPref,
+    centerRatio: totalOpen > 0 ? centerFirst / totalOpen : 0.5,
+    endgameWeak,
+    avgLossLen: lostGames.length > 0 ? lostGames.reduce((s,g) => s + (g.moves?.length || 0), 0) / lostGames.length : 0,
+    avgWinLen: wonGames.length > 0 ? wonGames.reduce((s,g) => s + (g.moves?.length || 0), 0) / wonGames.length : 0,
+  };
+}
+
+function inferWinningDirection(game) {
+  if (!game.moves || game.moves.length < 5) return null;
+  if (game.winReason !== 'five') return null;
+
+  const moves = game.moves;
+  const lastMove = moves[moves.length - 1];
+  const winColor = lastMove.color;
+
+  const size = game.boardSize || 15;
+  const board = Array.from({ length: size }, () => Array(size).fill(0));
+  for (const m of moves) {
+    board[m.y][m.x] = m.color;
+  }
+
+  const dirs = [
+    { dx: 1, dy: 0, type: 'horizontal' },
+    { dx: 0, dy: 1, type: 'vertical' },
+    { dx: 1, dy: 1, type: 'diagonal' },
+    { dx: 1, dy: -1, type: 'diagonal' },
+  ];
+
+  for (const { dx, dy, type } of dirs) {
+    let count = 1;
+    for (let i = 1; i < 6; i++) {
+      const nx = lastMove.x + dx * i, ny = lastMove.y + dy * i;
+      if (nx < 0 || nx >= size || ny < 0 || ny >= size) break;
+      if (board[ny][nx] !== winColor) break;
+      count++;
+    }
+    for (let i = 1; i < 6; i++) {
+      const nx = lastMove.x - dx * i, ny = lastMove.y - dy * i;
+      if (nx < 0 || nx >= size || ny < 0 || ny >= size) break;
+      if (board[ny][nx] !== winColor) break;
+      count++;
+    }
+    if (count >= 5) return type;
+  }
+  return null;
+}
+
+function countAttackVsDefense(moves, userColor, size) {
+  if (!moves || moves.length === 0) return { attack: 0, defense: 0 };
+
+  const board = Array.from({ length: size }, () => Array(size).fill(0));
+  let attack = 0, defense = 0;
+
+  for (const move of moves) {
+    if (move.color !== userColor) {
+      board[move.y][move.x] = move.color;
+      continue;
+    }
+    let myAdj = 0, oppAdj = 0;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const nx = move.x + dx, ny = move.y + dy;
+        if (nx < 0 || nx >= size || ny < 0 || ny >= size) continue;
+        if (board[ny][nx] === userColor) myAdj++;
+        else if (board[ny][nx] !== 0) oppAdj++;
+      }
+    }
+    if (myAdj > oppAdj) attack++;
+    else if (oppAdj > myAdj) defense++;
+    else attack += 0.5;
+    board[move.y][move.x] = move.color;
+  }
+  return { attack, defense };
+}
