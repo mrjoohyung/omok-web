@@ -140,9 +140,11 @@ export default function GameScreen({ config, onExit }) {
     setAiThinking(true);
     aiTimerRef.current = setTimeout(() => {
       try {
+        console.log('AI 호출:', { aiColorVal, aiLevel, aiStyle, renju, allowOverline });
         const move = chooseAIMove(board, aiColorVal, {
           level: aiLevel, style: aiStyle, renju, allowOverline, timeLimit: 3000,
         });
+        console.log('AI 응답:', move);
         if (move) {
           const result = placeStoneInternal(board, move.x, move.y, aiColorVal);
           if (!result.ended) {
