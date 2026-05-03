@@ -1,23 +1,16 @@
-// =======================================================================
-// App.jsx — 화면 라우팅 + 인증 상태 관리
-// =======================================================================
-// 화면 흐름: 로그인 → 메뉴 → 게임
-// 게스트 모드도 "로그인된 것처럼" 취급 (단, Firebase 인증은 안 됨)
-// =======================================================================
-
 import React, { useState, useEffect } from 'react';
 import LoginScreen from './components/LoginScreen.jsx';
 import StartScreen from './components/StartScreen.jsx';
 import GameScreen from './components/GameScreen.jsx';
-import { watchAuthState, logout, getOrCreateGuestId } from './firebase/auth.js';
+import FamilyManagement from './components/FamilyManagement.jsx';
+import { watchAuthState, logout } from './firebase/auth.js';
 
 export default function App() {
-  // 'login' | 'start' | 'game'
   const [screen, setScreen] = useState('login');
-  // user: { type: 'google'|'guest', uid, displayName, photoURL }
   const [user, setUser] = useState(null);
   const [authChecking, setAuthChecking] = useState(true);
   const [gameConfig, setGameConfig] = useState(null);
+  const [resumeState, setResumeState] = useState(null);
   const [theme, setTheme] = useState(() => {
     return localStorage.getItem('omok-theme') || 'classic';
   });
@@ -27,7 +20,6 @@ export default function App() {
     localStorage.setItem('omok-theme', theme);
   }, [theme]);
 
-  // Firebase 인증 상태 구독
   useEffect(() => {
     const unsub = watchAuthState((firebaseUser) => {
       if (firebaseUser) {
@@ -39,18 +31,13 @@ export default function App() {
           email: firebaseUser.email || null,
         });
         setScreen((s) => (s === 'login' ? 'start' : s));
-      } else {
-        // 로그인 안 됨 — 화면 결정은 다른 데서
       }
       setAuthChecking(false);
     });
     return unsub;
   }, []);
 
-  const handleAuthSuccess = (firebaseUser) => {
-    // watchAuthState가 이미 user를 설정함. 그냥 화면만 이동
-    setScreen('start');
-  };
+  const handleAuthSuccess = () => setScreen('start');
 
   const handleGuestStart = (guestId) => {
     setUser({
@@ -64,18 +51,24 @@ export default function App() {
 
   const handleStartGame = (config) => {
     setGameConfig(config);
+    setResumeState(null);
+    setScreen('game');
+  };
+
+  const handleResume = (savedState) => {
+    setGameConfig(savedState.config);
+    setResumeState(savedState);
     setScreen('game');
   };
 
   const handleExitGame = () => {
     setGameConfig(null);
+    setResumeState(null);
     setScreen('start');
   };
 
   const handleLogout = async () => {
-    if (user?.type === 'google') {
-      await logout();
-    }
+    if (user?.type === 'google') await logout();
     setUser(null);
     setScreen('login');
   };
@@ -103,6 +96,14 @@ export default function App() {
     );
   }
 
+  if (screen === 'family') {
+    return <FamilyManagement user={user} onBack={() => setScreen('start')} />;
+  }
+
+  if (screen === 'analysis') {
+    return <AnalysisPlaceholder onBack={() => setScreen('start')} />;
+  }
+
   if (screen === 'start') {
     return (
       <StartScreen
@@ -111,9 +112,39 @@ export default function App() {
         currentTheme={theme}
         user={user}
         onLogout={handleLogout}
+        onOpenFamily={() => setScreen('family')}
+        onOpenAnalysis={() => setScreen('analysis')}
+        onResume={handleResume}
       />
     );
   }
 
-  return <GameScreen config={gameConfig} onExit={handleExitGame} user={user} />;
+  return (
+    <GameScreen
+      config={gameConfig}
+      onExit={handleExitGame}
+      user={user}
+      resumeState={resumeState}
+    />
+  );
+}
+
+function AnalysisPlaceholder({ onBack }) {
+  return (
+    <div className="app-shell">
+      <div className="title">
+        <span>Omok</span>
+        <span className="han">五目</span>
+      </div>
+      <div className="subtitle">— 분석 / 전적 —</div>
+      <div className="panel">
+        <h2>분석 / 전적</h2>
+        <p style={{ fontSize: 14, color: 'var(--fg-muted)', lineHeight: 1.7 }}>
+          이 화면은 다음 단계에서 정식으로 만들어집니다.
+          <br />지금은 게임을 두시면 데이터가 백그라운드에 잘 쌓이고 있어요.
+        </p>
+      </div>
+      <button className="secondary-btn" onClick={onBack}>← 메뉴로</button>
+    </div>
+  );
 }
