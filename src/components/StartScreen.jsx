@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { LEVEL_CONFIG } from '../game/ai.js';
-import { listFamily, loadCurrentGame } from '../firebase/store.js';
+import { listFamily, loadCurrentGame, listRecentGames } from '../firebase/store.js';
+import { computePlayerPattern } from '../game/analytics.js';
 
 export default function StartScreen({
   onStart, onThemeChange, currentTheme,
@@ -18,16 +19,18 @@ export default function StartScreen({
   const [blackLabel, setBlackLabel] = useState('anonymous');
   const [whiteLabel, setWhiteLabel] = useState('anonymous');
 
-  const [aiLevel, setAiLevel] = useState(3);
+ const [aiLevel, setAiLevel] = useState(3);
   const [aiStyle, setAiStyle] = useState('balanced');
   const [userColor, setUserColor] = useState('black');
   const [practiceMode, setPracticeMode] = useState(true);
   const [showThreatsPvc, setShowThreatsPvc] = useState(false);
+  const [exploitMode, setExploitMode] = useState('normal'); // 'normal' | 'exploit'
+  const [playerPattern, setPlayerPattern] = useState(null);
 
   const [familyList, setFamilyList] = useState([]);
   const [pendingResume, setPendingResume] = useState(null);
 
-  useEffect(() => {
+ useEffect(() => {
     let mounted = true;
     (async () => {
       if (!user) return;
@@ -39,6 +42,11 @@ export default function StartScreen({
         const cur = await loadCurrentGame(user);
         if (mounted && cur) setPendingResume(cur);
       } catch (e) { console.warn('진행 중 게임 확인 실패:', e); }
+      try {
+        const games = await listRecentGames(user, 1000);
+        const pattern = computePlayerPattern(games);
+        if (mounted) setPlayerPattern(pattern);
+      } catch (e) { console.warn('패턴 분석 로드 실패:', e); }
     })();
     return () => { mounted = false; };
   }, [user]);
@@ -72,6 +80,16 @@ export default function StartScreen({
       config.undoLimit = practiceMode ? -1 : 1;
       config.hintEnabled = true;
       config.showThreats = practiceMode ? showThreatsPvc : false;
+      // 약점 공략: 데이터 충분 + 사용자 선택 + Lv4 이상에서만 활성화
+      const exploitActive = exploitMode === 'exploit'
+        && playerPattern?.enoughData
+        && aiLevel >= 4;
+      config.exploitWeakness = exploitActive;
+      if (exploitActive) {
+        config.dirWeights = playerPattern.dirWeights;
+        // Lv4 = 옵션 A (1.2), Lv5 = 옵션 B (1.5)
+        config.weaknessStrength = aiLevel === 5 ? 1.5 : 1.2;
+      }
     }
     onStart(config);
   };
@@ -318,6 +336,25 @@ export default function StartScreen({
                 {aiStyle === 'balanced' && '균형: 공격과 방어 균등'}
               </div>
             </div>
+            <div className="option-row">
+            <div><label>공략 방식</label>
+              <div className="hint-text">
+                {(() => {
+                  if (exploitMode === 'normal') return '평범형: 균등하게 둠';
+                  if (!playerPattern?.enoughData) {
+                    return `약점공략형: 데이터 부족 (${playerPattern?.have || 0}/${playerPattern?.need || 20}판) → 평범형으로 진행`;
+                  }
+                  if (aiLevel < 4) return '약점공략형: Lv4 이상에서만 활성화 → 평범형으로 진행';
+                  if (aiLevel === 5) return '약점공략형 (Lv5): 사용자 약한 방향 강하게 공격';
+                  return '약점공략형 (Lv4): 사용자 약한 방향 살짝 더 공격';
+                })()}
+              </div>
+            </div>
+            <div className="choice-group">
+              <button className={`choice-btn ${exploitMode === 'normal' ? 'active' : ''}`} onClick={() => setExploitMode('normal')}>평범형</button>
+              <button className={`choice-btn ${exploitMode === 'exploit' ? 'active' : ''}`} onClick={() => setExploitMode('exploit')}>약점공략형</button>
+            </div>
+          </div>
             <div className="choice-group">
               <button className={`choice-btn ${aiStyle === 'attack' ? 'active' : ''}`} onClick={() => setAiStyle('attack')}>공격형</button>
               <button className={`choice-btn ${aiStyle === 'defense' ? 'active' : ''}`} onClick={() => setAiStyle('defense')}>방어형</button>
