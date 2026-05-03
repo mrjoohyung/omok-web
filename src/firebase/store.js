@@ -1,5 +1,5 @@
 // =======================================================================
-// store.js — Firestore + localStorage 통합 데이터 모듈
+// store.js — 흑백 분리 통계 버전
 // =======================================================================
 
 import {
@@ -9,24 +9,31 @@ import {
 } from 'firebase/firestore';
 import { db } from './config.js';
 
-function gKey(uid, suffix) {
-  return `omok-${uid}-${suffix}`;
-}
-function isGuest(user) {
-  return user?.type === 'guest';
-}
+function gKey(uid, suffix) { return `omok-${uid}-${suffix}`; }
+function isGuest(user) { return user?.type === 'guest'; }
+
+const EMPTY_COLOR_STATS = { wins: 0, losses: 0, draws: 0 };
+const EMPTY_AI_STATS = {
+  asBlack: { total: 0, wins: 0, losses: 0, draws: 0 },
+  asWhite: { total: 0, wins: 0, losses: 0, draws: 0 },
+};
+const EMPTY_PVP_STATS = { total: 0, blackWins: 0, whiteWins: 0, draws: 0 };
 
 const DEFAULT_STATS = {
-  aiTotal: 0, aiWins: 0, aiLosses: 0, aiDraws: 0,
-  pvpTotal: 0, pvpWins: 0, pvpLosses: 0, pvpDraws: 0,
+  ai: JSON.parse(JSON.stringify(EMPTY_AI_STATS)),
+  pvp: { ...EMPTY_PVP_STATS },
 };
-const DEFAULT_AI_STATS_BY_LEVEL = {
-  1: { wins: 0, losses: 0, draws: 0 },
-  2: { wins: 0, losses: 0, draws: 0 },
-  3: { wins: 0, losses: 0, draws: 0 },
-  4: { wins: 0, losses: 0, draws: 0 },
-  5: { wins: 0, losses: 0, draws: 0 },
-};
+
+function emptyAiByLevel() {
+  const out = {};
+  for (let lv = 1; lv <= 5; lv++) {
+    out[lv] = {
+      asBlack: { ...EMPTY_COLOR_STATS },
+      asWhite: { ...EMPTY_COLOR_STATS },
+    };
+  }
+  return out;
+}
 
 // ===== 가족 명단 =====
 export async function listFamily(user) {
@@ -138,23 +145,27 @@ async function saveGameResultGuest(user, rec) {
 async function applyStatsDelta(user, rec, delta) {
   const userRef = doc(db, 'users', user.uid);
   const updates = {};
+
   if (rec.mode === 'pvc') {
-    updates['stats.aiTotal'] = increment(delta);
-    if (rec.winner === 'draw') updates['stats.aiDraws'] = increment(delta);
-    else if (rec.userWon) updates['stats.aiWins'] = increment(delta);
-    else updates['stats.aiLosses'] = increment(delta);
+    const colorKey = rec.userColor === 'white' ? 'asWhite' : 'asBlack';
+    updates[`stats.ai.${colorKey}.total`] = increment(delta);
+    if (rec.winner === 'draw') updates[`stats.ai.${colorKey}.draws`] = increment(delta);
+    else if (rec.userWon) updates[`stats.ai.${colorKey}.wins`] = increment(delta);
+    else updates[`stats.ai.${colorKey}.losses`] = increment(delta);
+
     if (rec.aiLevel) {
       const lv = rec.aiLevel;
-      if (rec.winner === 'draw') updates[`aiStatsByLevel.${lv}.draws`] = increment(delta);
-      else if (rec.userWon) updates[`aiStatsByLevel.${lv}.wins`] = increment(delta);
-      else updates[`aiStatsByLevel.${lv}.losses`] = increment(delta);
+      if (rec.winner === 'draw') updates[`aiStatsByLevel.${lv}.${colorKey}.draws`] = increment(delta);
+      else if (rec.userWon) updates[`aiStatsByLevel.${lv}.${colorKey}.wins`] = increment(delta);
+      else updates[`aiStatsByLevel.${lv}.${colorKey}.losses`] = increment(delta);
     }
   } else if (rec.mode === 'pvp') {
-    updates['stats.pvpTotal'] = increment(delta);
-    if (rec.winner === 'draw') updates['stats.pvpDraws'] = increment(delta);
-    else if (rec.winner === 'black') updates['stats.pvpWins'] = increment(delta);
-    else updates['stats.pvpLosses'] = increment(delta);
+    updates['stats.pvp.total'] = increment(delta);
+    if (rec.winner === 'draw') updates['stats.pvp.draws'] = increment(delta);
+    else if (rec.winner === 'black') updates['stats.pvp.blackWins'] = increment(delta);
+    else if (rec.winner === 'white') updates['stats.pvp.whiteWins'] = increment(delta);
   }
+
   await setDoc(userRef, updates, { merge: true });
 }
 
@@ -162,26 +173,45 @@ function applyStatsDeltaGuest(user, rec, delta) {
   const key = gKey(user.uid, 'stats');
   const raw = localStorage.getItem(key);
   const stats = raw ? JSON.parse(raw) : {
-    stats: { ...DEFAULT_STATS },
-    aiStatsByLevel: JSON.parse(JSON.stringify(DEFAULT_AI_STATS_BY_LEVEL)),
+    stats: JSON.parse(JSON.stringify(DEFAULT_STATS)),
+    aiStatsByLevel: emptyAiByLevel(),
   };
+
+  if (!stats.stats) stats.stats = JSON.parse(JSON.stringify(DEFAULT_STATS));
+  if (!stats.stats.ai) stats.stats.ai = JSON.parse(JSON.stringify(EMPTY_AI_STATS));
+  if (!stats.stats.pvp) stats.stats.pvp = { ...EMPTY_PVP_STATS };
+  if (!stats.aiStatsByLevel) stats.aiStatsByLevel = emptyAiByLevel();
+
+  const clamp = (v) => Math.max(0, v);
+
   if (rec.mode === 'pvc') {
-    stats.stats.aiTotal = Math.max(0, (stats.stats.aiTotal || 0) + delta);
-    if (rec.winner === 'draw') stats.stats.aiDraws = Math.max(0, (stats.stats.aiDraws || 0) + delta);
-    else if (rec.userWon) stats.stats.aiWins = Math.max(0, (stats.stats.aiWins || 0) + delta);
-    else stats.stats.aiLosses = Math.max(0, (stats.stats.aiLosses || 0) + delta);
-    if (rec.aiLevel && stats.aiStatsByLevel[rec.aiLevel]) {
-      const slot = stats.aiStatsByLevel[rec.aiLevel];
-      if (rec.winner === 'draw') slot.draws = Math.max(0, (slot.draws || 0) + delta);
-      else if (rec.userWon) slot.wins = Math.max(0, (slot.wins || 0) + delta);
-      else slot.losses = Math.max(0, (slot.losses || 0) + delta);
+    const colorKey = rec.userColor === 'white' ? 'asWhite' : 'asBlack';
+    const slot = stats.stats.ai[colorKey];
+    slot.total = clamp((slot.total || 0) + delta);
+    if (rec.winner === 'draw') slot.draws = clamp((slot.draws || 0) + delta);
+    else if (rec.userWon) slot.wins = clamp((slot.wins || 0) + delta);
+    else slot.losses = clamp((slot.losses || 0) + delta);
+
+    if (rec.aiLevel) {
+      if (!stats.aiStatsByLevel[rec.aiLevel]) {
+        stats.aiStatsByLevel[rec.aiLevel] = { asBlack: { ...EMPTY_COLOR_STATS }, asWhite: { ...EMPTY_COLOR_STATS } };
+      }
+      if (!stats.aiStatsByLevel[rec.aiLevel][colorKey]) {
+        stats.aiStatsByLevel[rec.aiLevel][colorKey] = { ...EMPTY_COLOR_STATS };
+      }
+      const lvSlot = stats.aiStatsByLevel[rec.aiLevel][colorKey];
+      if (rec.winner === 'draw') lvSlot.draws = clamp((lvSlot.draws || 0) + delta);
+      else if (rec.userWon) lvSlot.wins = clamp((lvSlot.wins || 0) + delta);
+      else lvSlot.losses = clamp((lvSlot.losses || 0) + delta);
     }
   } else if (rec.mode === 'pvp') {
-    stats.stats.pvpTotal = Math.max(0, (stats.stats.pvpTotal || 0) + delta);
-    if (rec.winner === 'draw') stats.stats.pvpDraws = Math.max(0, (stats.stats.pvpDraws || 0) + delta);
-    else if (rec.winner === 'black') stats.stats.pvpWins = Math.max(0, (stats.stats.pvpWins || 0) + delta);
-    else stats.stats.pvpLosses = Math.max(0, (stats.stats.pvpLosses || 0) + delta);
+    const p = stats.stats.pvp;
+    p.total = clamp((p.total || 0) + delta);
+    if (rec.winner === 'draw') p.draws = clamp((p.draws || 0) + delta);
+    else if (rec.winner === 'black') p.blackWins = clamp((p.blackWins || 0) + delta);
+    else if (rec.winner === 'white') p.whiteWins = clamp((p.whiteWins || 0) + delta);
   }
+
   localStorage.setItem(key, JSON.stringify(stats));
 }
 
@@ -189,15 +219,31 @@ function applyStatsDeltaGuest(user, rec, delta) {
 export async function loadStats(user) {
   if (isGuest(user)) {
     const raw = localStorage.getItem(gKey(user.uid, 'stats'));
-    if (!raw) return { stats: { ...DEFAULT_STATS }, aiStatsByLevel: { ...DEFAULT_AI_STATS_BY_LEVEL } };
-    return JSON.parse(raw);
+    if (!raw) return {
+      stats: JSON.parse(JSON.stringify(DEFAULT_STATS)),
+      aiStatsByLevel: emptyAiByLevel(),
+    };
+    const parsed = JSON.parse(raw);
+    return {
+      stats: {
+        ai: parsed.stats?.ai || JSON.parse(JSON.stringify(EMPTY_AI_STATS)),
+        pvp: parsed.stats?.pvp || { ...EMPTY_PVP_STATS },
+      },
+      aiStatsByLevel: parsed.aiStatsByLevel || emptyAiByLevel(),
+    };
   }
   const snap = await getDoc(doc(db, 'users', user.uid));
-  if (!snap.exists()) return { stats: { ...DEFAULT_STATS }, aiStatsByLevel: { ...DEFAULT_AI_STATS_BY_LEVEL } };
+  if (!snap.exists()) return {
+    stats: JSON.parse(JSON.stringify(DEFAULT_STATS)),
+    aiStatsByLevel: emptyAiByLevel(),
+  };
   const data = snap.data();
   return {
-    stats: { ...DEFAULT_STATS, ...(data.stats || {}) },
-    aiStatsByLevel: { ...DEFAULT_AI_STATS_BY_LEVEL, ...(data.aiStatsByLevel || {}) },
+    stats: {
+      ai: data.stats?.ai || JSON.parse(JSON.stringify(EMPTY_AI_STATS)),
+      pvp: data.stats?.pvp || { ...EMPTY_PVP_STATS },
+    },
+    aiStatsByLevel: data.aiStatsByLevel || emptyAiByLevel(),
   };
 }
 
@@ -219,27 +265,42 @@ export async function listRecentGames(user, max = 50) {
 export async function loadFamilyStats(user) {
   const games = await listRecentGames(user, 1000);
   const map = new Map();
+
+  function ensure(id, name) {
+    if (!map.has(id)) {
+      map.set(id, {
+        id, name,
+        total: 0,
+        asBlack: { wins: 0, losses: 0, draws: 0, total: 0 },
+        asWhite: { wins: 0, losses: 0, draws: 0, total: 0 },
+      });
+    }
+    return map.get(id);
+  }
+
   for (const g of games) {
     if (g.mode !== 'pvp') continue;
     const blackId = g.blackLabel || 'anonymous';
     const blackName = g.blackLabelName || '익명';
     const whiteId = g.whiteLabel || 'anonymous';
     const whiteName = g.whiteLabelName || '익명';
-    if (!map.has(blackId)) map.set(blackId, { id: blackId, name: blackName, wins: 0, losses: 0, draws: 0, total: 0 });
-    if (!map.has(whiteId)) map.set(whiteId, { id: whiteId, name: whiteName, wins: 0, losses: 0, draws: 0, total: 0 });
-    const blackEntry = map.get(blackId);
-    const whiteEntry = map.get(whiteId);
+
+    const blackEntry = ensure(blackId, blackName);
+    const whiteEntry = ensure(whiteId, whiteName);
     blackEntry.total++;
     whiteEntry.total++;
+    blackEntry.asBlack.total++;
+    whiteEntry.asWhite.total++;
+
     if (g.winner === 'draw') {
-      blackEntry.draws++;
-      whiteEntry.draws++;
+      blackEntry.asBlack.draws++;
+      whiteEntry.asWhite.draws++;
     } else if (g.winner === 'black') {
-      blackEntry.wins++;
-      whiteEntry.losses++;
+      blackEntry.asBlack.wins++;
+      whiteEntry.asWhite.losses++;
     } else if (g.winner === 'white') {
-      whiteEntry.wins++;
-      blackEntry.losses++;
+      blackEntry.asBlack.losses++;
+      whiteEntry.asWhite.wins++;
     }
   }
   return Array.from(map.values()).sort((a, b) => b.total - a.total);
@@ -299,8 +360,8 @@ export async function deleteAllGames(user) {
     await deleteDoc(doc(db, 'users', user.uid, 'games', g.id));
   }
   await setDoc(doc(db, 'users', user.uid), {
-    stats: { ...DEFAULT_STATS },
-    aiStatsByLevel: { ...DEFAULT_AI_STATS_BY_LEVEL },
+    stats: JSON.parse(JSON.stringify(DEFAULT_STATS)),
+    aiStatsByLevel: emptyAiByLevel(),
   }, { merge: true });
 }
 
