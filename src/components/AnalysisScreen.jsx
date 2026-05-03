@@ -4,7 +4,7 @@ import {
   deleteGame, deleteGamesByLabel, deleteAllGames, deleteAccount,
 } from '../firebase/store.js';
 import { LEVEL_CONFIG } from '../game/ai.js';
-import { computeStrengths, computeTrendSeries, computeRecentChange } from '../game/analytics.js';
+import { computeStrengths, computeTrendSeries, computeRecentChange, computePlayerPattern } from '../game/analytics.js';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
@@ -84,10 +84,10 @@ export default function AnalysisScreen({ user, onBack, onAccountDeleted }) {
   const pvpTotal = stats?.pvp?.total || 0;
   const grandTotal = aiTotal + pvpTotal;
 
-  const strengthAnalysis = computeStrengths(allGamesForChart, stats?.ai, aiByLevel);
+ const strengthAnalysis = computeStrengths(allGamesForChart, stats?.ai, aiByLevel);
+  const playerPattern = computePlayerPattern(allGamesForChart);
   const trendSeries = computeTrendSeries(allGamesForChart, 5);
   const recentChange = computeRecentChange(trendSeries, 5);
-
   return (
     <div className="app-shell">
       <div className="title">
@@ -158,7 +158,16 @@ export default function AnalysisScreen({ user, onBack, onAccountDeleted }) {
           </div>
         )}
       </div>
+      {/* === 플레이 패턴 === */}
+      <div className="panel">
+        <h2>플레이 패턴</h2>
+        <p style={{ fontSize: 11, color: 'var(--fg-muted)', fontFamily: 'JetBrains Mono, monospace', marginBottom: 14 }}>
+          최근 AI 대전 분석 (20판 이상 시 정확도 ↑)
+        </p>
+        <PatternSection pattern={playerPattern} />
+      </div>
 
+      {/* === 추세 그래프 === */}
       <div className="panel">
         <h2>실력 추세</h2>
         <p style={{ fontSize: 11, color: 'var(--fg-muted)', fontFamily: 'JetBrains Mono, monospace', marginBottom: 14 }}>
@@ -522,3 +531,103 @@ const dangerBtnStyle = {
   fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.08em', textTransform: 'uppercase',
 };
 function pad(n) { return n < 10 ? '0' + n : '' + n; }
+
+function PatternSection({ pattern }) {
+  if (!pattern) return null;
+
+  if (!pattern.enoughData) {
+    return (
+      <p style={{ color: 'var(--fg-muted)', fontSize: 13, padding: '8px 0' }}>
+        패턴 분석을 위해 AI 대전 {pattern.need}판 이상이 필요합니다.
+        <br/>
+        <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>
+          현재 {pattern.have}/{pattern.need}판
+        </span>
+      </p>
+    );
+  }
+
+  const dirNames = { horizontal: '가로', vertical: '세로', diagonal: '대각선' };
+  const weakDirs = Object.entries(pattern.dirWeights)
+    .filter(([k, v]) => v > 1.0)
+    .map(([k]) => dirNames[k]);
+
+  const typeText = {
+    attacker: '공격형 — 자기 라인 만들기를 더 자주 함',
+    defender: '방어형 — 상대 견제를 더 자주 함',
+    balanced: '균형형 — 공격과 방어 비율이 비슷함',
+  }[pattern.playerType];
+
+  const openingText = {
+    center: '중앙 위주 — 첫 수를 보드 중앙 부근에 두는 편',
+    outside: '변두리 위주 — 첫 수를 보드 가장자리에 두는 편',
+    mixed: '다양 — 첫 수 위치가 매번 다름',
+  }[pattern.openingPref];
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <PatternRow
+        label="플레이 성향"
+        value={typeText}
+        meta={`공격 ${Math.round(pattern.attackRatio * 100)}% / 방어 ${Math.round((1 - pattern.attackRatio) * 100)}%`}
+      />
+      <PatternRow
+        label="첫 수 패턴"
+        value={openingText}
+        meta={`중앙 ${Math.round(pattern.centerRatio * 100)}% / 변두리 ${Math.round((1 - pattern.centerRatio) * 100)}%`}
+      />
+      <PatternRow
+        label="방향 약점"
+        value={weakDirs.length > 0
+          ? `${weakDirs.join(', ')} 방향에서 더 자주 패배`
+          : '특정 방향에 치우치지 않음'
+        }
+        meta={`가로 ${pattern.dirCounts.horizontal} / 세로 ${pattern.dirCounts.vertical} / 대각 ${pattern.dirCounts.diagonal}`}
+      />
+      <PatternRow
+        label="종반 약점"
+        value={pattern.endgameWeak
+          ? '게임이 길어지면 패배 빈도 증가'
+          : '게임 길이와 승패 무관'
+        }
+        meta={pattern.endgameWeak
+          ? `평균 패배 ${Math.round(pattern.avgLossLen)}수 vs 평균 승리 ${Math.round(pattern.avgWinLen)}수`
+          : null
+        }
+      />
+
+      <p style={{ fontSize: 11, color: 'var(--fg-muted)', fontFamily: 'JetBrains Mono, monospace', marginTop: 8, lineHeight: 1.5 }}>
+        ℹ Lv4·5 + 약점공략형 모드에서 이 분석을 기반으로 AI가 약점을 의식해 둡니다.
+      </p>
+    </div>
+  );
+}
+
+function PatternRow({ label, value, meta }) {
+  return (
+    <div style={{
+      padding: '10px 14px',
+      background: 'var(--bg-2)',
+      border: '1px solid var(--border)',
+      borderRadius: 3,
+    }}>
+      <div style={{
+        fontSize: 11, color: 'var(--fg-muted)',
+        fontFamily: 'JetBrains Mono, monospace',
+        letterSpacing: '0.06em', marginBottom: 4,
+      }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 13, color: 'var(--fg)', lineHeight: 1.5 }}>{value}</div>
+      {meta && (
+        <div style={{
+          fontSize: 11, color: 'var(--fg-muted)',
+          fontFamily: 'JetBrains Mono, monospace',
+          marginTop: 4,
+        }}>
+          {meta}
+        </div>
+      )}
+    </div>
+  );
+}
