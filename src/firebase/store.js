@@ -383,3 +383,27 @@ export async function deleteAccount(user) {
   await clearCurrentGame(user);
   await deleteDoc(doc(db, 'users', user.uid));
 }
+// =======================================================================
+// 온라인 대국 - 상대 라벨 매핑 (uid → 가족 라벨 ID)
+// =======================================================================
+export async function getOpponentLabelMap(user) {
+  if (isGuest(user)) {
+    const raw = localStorage.getItem(gKey(user.uid, 'oppmap'));
+    return raw ? JSON.parse(raw) : {};
+  }
+  const snap = await getDoc(doc(db, 'users', user.uid));
+  if (!snap.exists()) return {};
+  return snap.data().opponentLabels || {};
+}
+
+export async function setOpponentLabel(user, opponentUid, labelId) {
+  if (isGuest(user)) {
+    const map = await getOpponentLabelMap(user);
+    map[opponentUid] = labelId;
+    localStorage.setItem(gKey(user.uid, 'oppmap'), JSON.stringify(map));
+    return;
+  }
+  await setDoc(doc(db, 'users', user.uid), {
+    [`opponentLabels.${opponentUid}`]: labelId,
+  }, { merge: true });
+}
