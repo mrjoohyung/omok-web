@@ -6,11 +6,14 @@ import {
 } from '../game/gameLogic.js';
 import { getHint } from '../game/hint.js';
 import { chooseAIMove } from '../game/ai.js';
+import { saveCurrentGame, clearCurrentGame, saveGameResult } from '../firebase/store.js';
 
-export default function GameScreen({ config, onExit }) {
+export default function GameScreen({ config, onExit, user, resumeState }) {
   const {
     mode, boardSize, renju, allowOverline, undoLimit, hintEnabled, showThreats,
     aiLevel, aiStyle, userColor, practiceMode,
+    blackLabel, whiteLabel, blackLabelName, whiteLabelName,
+    pvpRecordable,
   } = config;
 
   const isAIMode = mode === 'pvc';
@@ -18,21 +21,80 @@ export default function GameScreen({ config, onExit }) {
   const aiColorVal = userColor === 'white' ? BLACK : WHITE;
   const overlineCheckOn = !allowOverline || renju;
 
-  const [board, setBoard] = useState(() => createBoard(boardSize));
-  const [history, setHistory] = useState([]);
-  const [turn, setTurn] = useState(BLACK);
+  const [board, setBoard] = useState(() =>
+    resumeState ? resumeState.board.map(r => r.slice()) : createBoard(boardSize)
+  );
+  const [history, setHistory] = useState(() => resumeState?.history || []);
+  const [turn, setTurn] = useState(() => resumeState?.turn ?? BLACK);
   const [winner, setWinner] = useState(null);
   const [winningLine, setWinningLine] = useState(null);
   const [winReason, setWinReason] = useState(null);
-  const [undoUsed, setUndoUsed] = useState(() => isAIMode ? 0 : { [BLACK]: 0, [WHITE]: 0 });
-  const [hintsLeft, setHintsLeft] = useState({ [BLACK]: 3, [WHITE]: 3 });
+  const [undoUsed, setUndoUsed] = useState(() =>
+    resumeState?.undoUsed ?? (isAIMode ? 0 : { [BLACK]: 0, [WHITE]: 0 })
+  );
+  const [hintsLeft, setHintsLeft] = useState(() =>
+    resumeState?.hintsLeft ?? { [BLACK]: 3, [WHITE]: 3 }
+  );
   const [hintCell, setHintCell] = useState(null);
   const [threatVisible, setThreatVisible] = useState(showThreats);
   const [aiThinking, setAiThinking] = useState(false);
   const [overlinePending, setOverlinePending] = useState(null);
+  const [resultSaved, setResultSaved] = useState(false);
 
   const aiTimerRef = useRef(null);
   const lastMove = history.length > 0 ? history[history.length - 1] : null;
+
+  // 자동 저장
+  useEffect(() => {
+    if (!user) return;
+    if (winner) return;
+    if (history.length === 0) return;
+    const state = {
+      config, board, history, turn, undoUsed, hintsLeft,
+      savedAtMs: Date.now(),
+    };
+    saveCurrentGame(user, state).catch((e) => console.warn('자동 저장 실패:', e));
+  }, [board, history, turn, undoUsed, hintsLeft, winner, user, config]);
+
+  // 게임 종료 시 결과 저장
+  useEffect(() => {
+    if (!winner) return;
+    if (!user) return;
+    if (resultSaved) return;
+    const shouldRecord = isAIMode || pvpRecordable !== false;
+    (async () => {
+      try {
+        if (shouldRecord && history.length > 0) {
+          const record = {
+            mode: isAIMode ? 'pvc' : 'pvp',
+            boardSize, renju, allowOverline,
+            winner: winner === 'draw' ? 'draw' : (winner === BLACK ? 'black' : 'white'),
+            winReason,
+            moves: history,
+            timestamp: Date.now(),
+          };
+          if (isAIMode) {
+            record.aiLevel = aiLevel;
+            record.aiStyle = aiStyle;
+            record.userColor = userColor;
+            record.practiceMode = practiceMode;
+            record.userWon = winner !== 'draw' && winner === userColorVal;
+          } else {
+            record.blackLabel = blackLabel || 'anonymous';
+            record.whiteLabel = whiteLabel || 'anonymous';
+            record.blackLabelName = blackLabelName || '익명';
+            record.whiteLabelName = whiteLabelName || '익명';
+          }
+          await saveGameResult(user, record);
+        }
+        await clearCurrentGame(user);
+      } catch (e) {
+        console.warn('결과 저장 실패:', e);
+      } finally {
+        setResultSaved(true);
+      }
+    })();
+  }, [winner]);
 
   const forbiddenCells = useMemo(() => {
     if (!renju || winner) return null;
@@ -125,12 +187,9 @@ export default function GameScreen({ config, onExit }) {
       setTurn(color === BLACK ? WHITE : BLACK);
     }
   };
+  const handleOverlineCancel = () => setOverlinePending(null);
 
-  const handleOverlineCancel = () => {
-    setOverlinePending(null);
-  };
-
-useEffect(() => {
+  useEffect(() => {
     if (!isAIMode) return;
     if (winner) return;
     if (turn !== aiColorVal) return;
@@ -159,6 +218,7 @@ useEffect(() => {
     return () => clearTimeout(timer);
   }, [turn, winner, isAIMode, aiColorVal, aiLevel, aiStyle, renju, allowOverline,
       board, history.length]);
+
   let canUndo = false;
   let undoCountText = '';
   if (!winner && !aiThinking && history.length > 0 && !overlinePending) {
@@ -235,6 +295,21 @@ useEffect(() => {
     onExit();
   };
 
+  const handleReplay = () => {
+    setBoard(createBoard(boardSize));
+    setHistory([]);
+    setTurn(BLACK);
+    setWinner(null);
+    setWinningLine(null);
+    setWinReason(null);
+    setUndoUsed(isAIMode ? 0 : { [BLACK]: 0, [WHITE]: 0 });
+    setHintsLeft({ [BLACK]: 3, [WHITE]: 3 });
+    setHintCell(null);
+    setOverlinePending(null);
+    setAiThinking(false);
+    setResultSaved(false);
+  };
+
   const resultMessage = useMemo(() => {
     if (!winner) return null;
     if (winner === 'draw') return { title: '무승부', body: '보드가 가득 찼습니다.' };
@@ -261,7 +336,12 @@ useEffect(() => {
   return (
     <div className="app-shell">
       <div className="game-shell">
-        <TurnIndicator turn={turn} winner={winner} isAIMode={isAIMode} userColorVal={userColorVal} aiThinking={aiThinking} />
+        <TurnIndicator
+          turn={turn} winner={winner}
+          isAIMode={isAIMode} userColorVal={userColorVal}
+          aiThinking={aiThinking}
+          blackLabelName={blackLabelName} whiteLabelName={whiteLabelName}
+        />
         <div className="board-wrap">
           <Board
             board={board} size={boardSize} lastMove={lastMove} winningLine={winningLine}
@@ -320,19 +400,7 @@ useEffect(() => {
             <p style={{ fontSize: 12, color: 'var(--fg-muted)', fontFamily: 'JetBrains Mono, monospace' }}>총 {history.length}수</p>
             <div className="modal-actions">
               <button className="secondary-btn" onClick={onExit}>메뉴로</button>
-              <button className="primary-btn" onClick={() => {
-                setBoard(createBoard(boardSize));
-                setHistory([]);
-                setTurn(BLACK);
-                setWinner(null);
-                setWinningLine(null);
-                setWinReason(null);
-                setUndoUsed(isAIMode ? 0 : { [BLACK]: 0, [WHITE]: 0 });
-                setHintsLeft({ [BLACK]: 3, [WHITE]: 3 });
-                setHintCell(null);
-                setOverlinePending(null);
-                setAiThinking(false);
-              }}>다시 두기</button>
+              <button className="primary-btn" onClick={handleReplay}>다시 두기</button>
             </div>
           </div>
         </div>
@@ -341,14 +409,20 @@ useEffect(() => {
   );
 }
 
-function TurnIndicator({ turn, winner, isAIMode, userColorVal, aiThinking }) {
+function TurnIndicator({ turn, winner, isAIMode, userColorVal, aiThinking, blackLabelName, whiteLabelName }) {
   if (winner === 'draw') return (<div className="turn-indicator"><span className="winner-tag">무승부</span></div>);
   if (winner) {
     const isUserWin = isAIMode && winner === userColorVal;
     return (
       <div className="turn-indicator">
         <div className={`turn-stone ${winner === BLACK ? 'black' : 'white'}`} />
-        <span>{isAIMode ? (isUserWin ? '내가 이김' : 'AI가 이김') : (winner === BLACK ? '흑 승' : '백 승')}</span>
+        <span>{
+          isAIMode
+            ? (isUserWin ? '내가 이김' : 'AI가 이김')
+            : (winner === BLACK
+                ? `${blackLabelName || '흑'} 승`
+                : `${whiteLabelName || '백'} 승`)
+        }</span>
         <span className="winner-tag">winner</span>
       </div>
     );
@@ -367,7 +441,11 @@ function TurnIndicator({ turn, winner, isAIMode, userColorVal, aiThinking }) {
     const isUserTurn = turn === userColorVal;
     label = isUserTurn ? `내 차례 (${turn === BLACK ? '흑' : '백'})` : `AI 차례 (${turn === BLACK ? '흑' : '백'})`;
   } else {
-    label = turn === BLACK ? '흑 차례' : '백 차례';
+    if (turn === BLACK) {
+      label = blackLabelName ? `${blackLabelName} 차례 (흑)` : '흑 차례';
+    } else {
+      label = whiteLabelName ? `${whiteLabelName} 차례 (백)` : '백 차례';
+    }
   }
   return (
     <div className="turn-indicator">
