@@ -28,12 +28,13 @@ export function chooseAIMove(board, color, options) {
   const {
     level = 3, style = 'balanced',
     renju = false, allowOverline = true, timeLimit = HARD_TIME_LIMIT,
+    exploitWeakness = false, dirWeights = null, weaknessStrength = 1.2,
   } = options;
 
   const cfg = LEVEL_CONFIG[level] || LEVEL_CONFIG[3];
   const opp = color === BLACK ? WHITE : BLACK;
   const startTime = Date.now();
-
+  const exploitOpts = { exploitWeakness, dirWeights, weaknessStrength };
   if (isBoardEmpty(board)) return openingMove(board, level);
 
   const allCandidates = generateCandidates(board);
@@ -59,9 +60,8 @@ export function chooseAIMove(board, color, options) {
   }
 
   const scored = allCandidates
-    .map(c => ({ ...c, score: scoreCellQuick(board, c.x, c.y, color, opp, style, { allowOverline }) }))
+    .map(c => ({ ...c, score: scoreCellQuick(board, c.x, c.y, color, opp, style, { allowOverline, ...exploitOpts }) }))
     .sort((a, b) => b.score - a.score);
-
   let candidates = scored;
   if (color === BLACK && renju) {
     candidates = scored.filter(c => !isForbidden(board, c.x, c.y, BLACK).forbidden);
@@ -85,7 +85,7 @@ export function chooseAIMove(board, color, options) {
     } else {
       val = -minimax(
         next, cfg.depth - 1, -Infinity, Infinity, opp, color,
-        { renju, allowOverline, style, deadline }
+        { renju, allowOverline, style, deadline, ...exploitOpts }
       );
     }
     ranked.push({ ...c, mmScore: val });
@@ -176,7 +176,51 @@ function scoreCellQuick(board, x, y, myColor, oppColor, style, options) {
   const c = (size - 1) / 2;
   const dist = Math.abs(x - c) + Math.abs(y - c);
   const center = Math.max(0, 30 - dist);
-  return s * myW + d * opW + center;
+  let total = s * myW + d * opW + center;
+
+  // 약점 공략: AI 공격 라인이 사용자 약한 방향에 형성될 때 보너스
+  if (options.exploitWeakness && options.dirWeights && s > 0) {
+    const dirs = computeDirectionalStrength(my, x, y, myColor);
+    const w = options.dirWeights;
+    let multiplier = 1.0;
+    if (dirs.horizontal) multiplier = Math.max(multiplier, w.horizontal || 1.0);
+    if (dirs.vertical) multiplier = Math.max(multiplier, w.vertical || 1.0);
+    if (dirs.diagonal) multiplier = Math.max(multiplier, w.diagonal || 1.0);
+    if (multiplier > 1.0) {
+      const strength = options.weaknessStrength || 1.2;
+      const finalMultiplier = 1.0 + (multiplier - 1.0) * (strength - 1.0) / 0.2;
+      total = total * finalMultiplier;
+    }
+  }
+  return total;
+}
+
+function computeDirectionalStrength(board, x, y, color) {
+  const size = board.length;
+  const dirs = [
+    { dx: 1, dy: 0, type: 'horizontal' },
+    { dx: 0, dy: 1, type: 'vertical' },
+    { dx: 1, dy: 1, type: 'diagonal' },
+    { dx: 1, dy: -1, type: 'diagonal' },
+  ];
+  const result = { horizontal: false, vertical: false, diagonal: false };
+  for (const { dx, dy, type } of dirs) {
+    let count = 1;
+    for (let i = 1; i < 5; i++) {
+      const nx = x + dx * i, ny = y + dy * i;
+      if (nx < 0 || nx >= size || ny < 0 || ny >= size) break;
+      if (board[ny][nx] !== color) break;
+      count++;
+    }
+    for (let i = 1; i < 5; i++) {
+      const nx = x - dx * i, ny = y - dy * i;
+      if (nx < 0 || nx >= size || ny < 0 || ny >= size) break;
+      if (board[ny][nx] !== color) break;
+      count++;
+    }
+    if (count >= 2) result[type] = true;
+  }
+  return result;
 }
 
 function minimax(board, depth, alpha, beta, currentColor, evalForColor, ctx) {
