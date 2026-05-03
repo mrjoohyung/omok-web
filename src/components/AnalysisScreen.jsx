@@ -4,6 +4,10 @@ import {
   deleteGame, deleteGamesByLabel, deleteAllGames, deleteAccount,
 } from '../firebase/store.js';
 import { LEVEL_CONFIG } from '../game/ai.js';
+import { computeStrengths, computeTrendSeries, computeRecentChange } from '../game/analytics.js';
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+} from 'recharts';
 
 export default function AnalysisScreen({ user, onBack, onAccountDeleted }) {
   const [loading, setLoading] = useState(true);
@@ -11,21 +15,24 @@ export default function AnalysisScreen({ user, onBack, onAccountDeleted }) {
   const [aiByLevel, setAiByLevel] = useState(null);
   const [familyStats, setFamilyStats] = useState([]);
   const [recentGames, setRecentGames] = useState([]);
+  const [allGamesForChart, setAllGamesForChart] = useState([]);
   const [error, setError] = useState(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [s, g, fs] = await Promise.all([
+      const [s, recent, fs, allGames] = await Promise.all([
         loadStats(user),
         listRecentGames(user, 30),
         loadFamilyStats(user),
+        listRecentGames(user, 1000),
       ]);
       setStats(s.stats);
       setAiByLevel(s.aiStatsByLevel);
-      setRecentGames(g);
+      setRecentGames(recent);
       setFamilyStats(fs);
+      setAllGamesForChart(allGames);
     } catch (e) {
       console.error(e);
       setError('데이터를 불러오지 못했습니다: ' + e.message);
@@ -41,9 +48,7 @@ export default function AnalysisScreen({ user, onBack, onAccountDeleted }) {
     try {
       await deleteGame(user, gameId);
       await refresh();
-    } catch (e) {
-      alert('삭제 실패: ' + e.message);
-    }
+    } catch (e) { alert('삭제 실패: ' + e.message); }
   };
 
   const handleDeleteByLabel = async (labelId, labelName) => {
@@ -52,9 +57,7 @@ export default function AnalysisScreen({ user, onBack, onAccountDeleted }) {
       const count = await deleteGamesByLabel(user, labelId);
       alert(`${count}개 게임이 삭제되었습니다.`);
       await refresh();
-    } catch (e) {
-      alert('삭제 실패: ' + e.message);
-    }
+    } catch (e) { alert('삭제 실패: ' + e.message); }
   };
 
   if (loading) {
@@ -81,6 +84,10 @@ export default function AnalysisScreen({ user, onBack, onAccountDeleted }) {
   const pvpTotal = stats?.pvp?.total || 0;
   const grandTotal = aiTotal + pvpTotal;
 
+  const strengthAnalysis = computeStrengths(allGamesForChart, stats?.ai, aiByLevel);
+  const trendSeries = computeTrendSeries(allGamesForChart, 5);
+  const recentChange = computeRecentChange(trendSeries, 5);
+
   return (
     <div className="app-shell">
       <div className="title">
@@ -102,6 +109,139 @@ export default function AnalysisScreen({ user, onBack, onAccountDeleted }) {
           <SummaryItem label="AI 대전" value={`${aiTotal}판`} sub={`${aiWins}승 ${aiLosses}패 ${aiDraws}무`} />
           <SummaryItem label="2인용" value={`${pvpTotal}판`} />
         </div>
+      </div>
+
+      <div className="panel">
+        <h2>강점 & 약점</h2>
+        <p style={{ fontSize: 11, color: 'var(--fg-muted)', fontFamily: 'JetBrains Mono, monospace', marginBottom: 14 }}>
+          AI 대전 결과 기반 분석 (5판 이상부터 분석)
+        </p>
+        {!strengthAnalysis.enoughData ? (
+          <p style={{ color: 'var(--fg-muted)', fontSize: 13, padding: '8px 0' }}>
+            아직 분석할 데이터가 부족합니다. AI 대전 {strengthAnalysis.need}판 이상이 필요해요.
+            <br/>
+            <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>
+              현재 {strengthAnalysis.have}/{strengthAnalysis.need}판
+            </span>
+          </p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {strengthAnalysis.strengths.length > 0 && (
+              <div>
+                <div style={{ fontSize: 12, color: 'var(--fg-muted)', fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.06em', marginBottom: 8 }}>💪 강점</div>
+                <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {strengthAnalysis.strengths.map((s, i) => (
+                    <li key={i} style={{ fontSize: 13, color: 'var(--fg)', padding: '8px 12px', background: 'var(--bg-2)', borderLeft: '3px solid #4caf50', borderRadius: 3, lineHeight: 1.5 }}>
+                      {s.text}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {strengthAnalysis.weaknesses.length > 0 && (
+              <div>
+                <div style={{ fontSize: 12, color: 'var(--fg-muted)', fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.06em', marginBottom: 8 }}>⚠ 약점</div>
+                <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {strengthAnalysis.weaknesses.map((w, i) => (
+                    <li key={i} style={{ fontSize: 13, color: 'var(--fg)', padding: '8px 12px', background: 'var(--bg-2)', borderLeft: '3px solid #e74c3c', borderRadius: 3, lineHeight: 1.5 }}>
+                      {w.text}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {strengthAnalysis.strengths.length === 0 && strengthAnalysis.weaknesses.length === 0 && (
+              <p style={{ color: 'var(--fg-muted)', fontSize: 13 }}>
+                특별한 강점이나 약점이 두드러지지 않습니다. 균형 있게 두고 계시네요.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div className="panel">
+        <h2>실력 추세</h2>
+        <p style={{ fontSize: 11, color: 'var(--fg-muted)', fontFamily: 'JetBrains Mono, monospace', marginBottom: 14 }}>
+          AI 대전 승률 변화 (전체 평균 vs 최근 5판)
+        </p>
+        {trendSeries.length < 5 ? (
+          <p style={{ color: 'var(--fg-muted)', fontSize: 13, padding: '8px 0' }}>
+            그래프를 그리려면 AI 대전 5판 이상이 필요합니다.
+            <br/>
+            <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>
+              현재 {trendSeries.length}/5판
+            </span>
+          </p>
+        ) : (
+          <>
+            <div style={{ width: '100%', height: 260, marginBottom: 12 }}>
+              <ResponsiveContainer>
+                <LineChart data={trendSeries} margin={{ top: 8, right: 16, left: -16, bottom: 4 }}>
+                  <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="idx"
+                    stroke="var(--fg-muted)"
+                    tick={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace' }}
+                  />
+                  <YAxis
+                    domain={[0, 100]}
+                    stroke="var(--fg-muted)"
+                    tick={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace' }}
+                    tickFormatter={(v) => `${v}%`}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      background: 'var(--bg-2)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 3,
+                      fontSize: 12,
+                    }}
+                    labelStyle={{ color: 'var(--fg)' }}
+                    formatter={(value, name) => {
+                      if (value === null || value === undefined) return ['—', name];
+                      return [`${value}%`, name];
+                    }}
+                    labelFormatter={(idx) => `${idx}번째 게임`}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Line
+                    type="monotone"
+                    dataKey="cumulative"
+                    name="전체 평균"
+                    stroke="var(--accent)"
+                    strokeWidth={2.5}
+                    dot={false}
+                    isAnimationActive={false}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="recent5"
+                    name="최근 5판"
+                    stroke="var(--last-mark)"
+                    strokeWidth={1.5}
+                    dot={{ r: 2 }}
+                    isAnimationActive={false}
+                    connectNulls={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            {recentChange && (
+              <div style={{
+                fontSize: 13, color: 'var(--fg)', padding: '10px 14px',
+                background: 'var(--bg-2)', borderRadius: 3,
+                fontFamily: 'JetBrains Mono, monospace',
+                display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+              }}>
+                <span style={{ color: 'var(--fg-muted)', fontSize: 11 }}>현재 추세:</span>
+                <span style={{ color: 'var(--accent)' }}>{recentChange.trend}</span>
+                <span style={{ color: 'var(--fg-muted)', fontSize: 11, marginLeft: 'auto' }}>
+                  {recentChange.prev}% → {recentChange.current}% ({recentChange.diff > 0 ? '+' : ''}{recentChange.diff}%p)
+                </span>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       <div className="panel">
@@ -158,7 +298,7 @@ export default function AnalysisScreen({ user, onBack, onAccountDeleted }) {
         <h2>2인용 — 상대별 전적</h2>
         {familyStats.length === 0 ? (
           <p style={{ color: 'var(--fg-muted)', fontSize: 13, padding: '12px 0', textAlign: 'center' }}>
-            아직 2인용 기록이 없습니다. 메뉴에서 가족 명단을 등록한 후 "사용자 정보로" 모드로 두면 여기에 쌓입니다.
+            아직 2인용 기록이 없습니다.
           </p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -305,11 +445,8 @@ function DangerActions({ user, onAfterReset, onAccountDeleted }) {
         alert('계정이 삭제되었습니다. 로그아웃됩니다.');
         if (onAccountDeleted) onAccountDeleted();
       }
-    } catch (e) {
-      alert('실패: ' + e.message);
-    } finally {
-      setBusy(false);
-    }
+    } catch (e) { alert('실패: ' + e.message); }
+    finally { setBusy(false); }
   };
 
   if (resetMode) {
@@ -326,8 +463,7 @@ function DangerActions({ user, onAfterReset, onAccountDeleted }) {
           확인을 위해 아래 입력란에 <b style={{ color: 'var(--fg)' }}>{need}</b> 라고 입력하세요:
         </p>
         <input
-          type="text"
-          value={confirmText}
+          type="text" value={confirmText}
           onChange={(e) => setConfirmText(e.target.value)}
           placeholder={need}
           style={{
@@ -370,23 +506,19 @@ function DangerActions({ user, onAfterReset, onAccountDeleted }) {
 function cardStyle() {
   return { padding: '12px 14px', background: 'var(--bg-2)', border: '1px solid var(--border)', borderRadius: 3 };
 }
-
 const smallDangerBtnStyle = {
   background: 'transparent', border: '1px solid var(--border)', color: 'var(--fg-muted)',
   fontSize: 11, padding: '4px 10px', borderRadius: 3, cursor: 'pointer',
   fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.08em',
 };
-
 const tinyDangerBtnStyle = {
   background: 'transparent', border: '1px solid var(--border)', color: 'var(--fg-muted)',
   fontSize: 10, padding: '2px 8px', borderRadius: 2, cursor: 'pointer',
   fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.06em', flexShrink: 0,
 };
-
 const dangerBtnStyle = {
   background: 'transparent', border: '1px solid #e74c3c', color: '#e74c3c',
   fontSize: 12, padding: '10px 16px', borderRadius: 3, cursor: 'pointer',
   fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.08em', textTransform: 'uppercase',
 };
-
 function pad(n) { return n < 10 ? '0' + n : '' + n; }
