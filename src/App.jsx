@@ -4,6 +4,8 @@ import StartScreen from './components/StartScreen.jsx';
 import GameScreen from './components/GameScreen.jsx';
 import FamilyManagement from './components/FamilyManagement.jsx';
 import AnalysisScreen from './components/AnalysisScreen.jsx';
+import OnlineLobby from './components/OnlineLobby.jsx';
+import OnlineRoom from './components/OnlineRoom.jsx';
 import { watchAuthState, logout, clearGuestId } from './firebase/auth.js';
 
 export default function App() {
@@ -11,7 +13,8 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [authChecking, setAuthChecking] = useState(true);
   const [gameConfig, setGameConfig] = useState(null);
-  const [resumeState, setResumeState] = useState(null);
+ const [resumeState, setResumeState] = useState(null);
+  const [onlineRoom, setOnlineRoom] = useState(null);
   const [theme, setTheme] = useState(() => {
     return localStorage.getItem('omok-theme') || 'classic';
   });
@@ -123,6 +126,37 @@ export default function App() {
     );
   }
 
+  if (screen === 'online-lobby') {
+    return (
+      <OnlineLobby
+        user={user}
+        onBack={() => setScreen('start')}
+        onRoomCreated={({ code }) => {
+          setOnlineRoom({ code, role: 'host' });
+          setScreen('online-room');
+        }}
+        onRoomJoined={({ code, role }) => {
+          setOnlineRoom({ code, role });
+          setScreen('online-room');
+        }}
+      />
+    );
+  }
+
+  if (screen === 'online-room' && onlineRoom) {
+    return (
+      <OnlineRoom
+        roomCode={onlineRoom.code}
+        role={onlineRoom.role}
+        user={user}
+        onExit={() => {
+          setOnlineRoom(null);
+          setScreen('start');
+        }}
+      />
+    );
+  }
+
   if (screen === 'start') {
     return (
       <StartScreen
@@ -133,6 +167,7 @@ export default function App() {
         onLogout={handleLogout}
         onOpenFamily={() => setScreen('family')}
         onOpenAnalysis={() => setScreen('analysis')}
+        onOpenOnline={() => setScreen('online-lobby')}
         onResume={handleResume}
       />
     );
