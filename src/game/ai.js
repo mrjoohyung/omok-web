@@ -16,15 +16,18 @@ const PATTERN_SCORE = {
 export const LEVEL_CONFIG = {
   1: { depth: 1, candidates: 8, mistake: 0.30, vcfDepth: 0, label: '입문' },
   2: { depth: 1, candidates: 12, mistake: 0.15, vcfDepth: 0, label: '초보' },
-  3: { depth: 3, candidates: 10, mistake: 0.05, vcfDepth: 0, label: '중급' },
-  4: { depth: 4, candidates: 8, mistake: 0, vcfDepth: 7, label: '상급' },
-  5: { depth: 4, candidates: 10, mistake: 0, vcfDepth: 9, label: '최상' },
+  3: { depth: 2, candidates: 10, mistake: 0.05, vcfDepth: 0, label: '중급' },
+  4: { depth: 3, candidates: 8, mistake: 0, vcfDepth: 4, label: '상급' },
+  5: { depth: 3, candidates: 10, mistake: 0, vcfDepth: 5, label: '최상' },
 };
+
+const HARD_TIME_LIMIT = 4000;
+const VCF_TIME_BUDGET = 1500;
 
 export function chooseAIMove(board, color, options) {
   const {
     level = 3, style = 'balanced',
-    renju = false, allowOverline = true, timeLimit = 3000,
+    renju = false, allowOverline = true, timeLimit = HARD_TIME_LIMIT,
   } = options;
 
   const cfg = LEVEL_CONFIG[level] || LEVEL_CONFIG[3];
@@ -50,7 +53,8 @@ export function chooseAIMove(board, color, options) {
   }
 
   if (cfg.vcfDepth > 0) {
-    const vcf = findVCF(board, color, cfg.vcfDepth, { renju, allowOverline });
+    const vcfDeadline = Math.min(startTime + VCF_TIME_BUDGET, startTime + timeLimit);
+    const vcf = findVCF(board, color, cfg.vcfDepth, { renju, allowOverline, deadline: vcfDeadline });
     if (vcf) return vcf;
   }
 
@@ -69,9 +73,10 @@ export function chooseAIMove(board, color, options) {
   let best = null;
   let bestScore = -Infinity;
   const ranked = [];
+  const deadline = startTime + timeLimit;
 
   for (const c of topCandidates) {
-    if (Date.now() - startTime > timeLimit) break;
+    if (Date.now() > deadline) break;
     const next = cloneBoard(board);
     next[c.y][c.x] = color;
     let val;
@@ -80,7 +85,7 @@ export function chooseAIMove(board, color, options) {
     } else {
       val = -minimax(
         next, cfg.depth - 1, -Infinity, Infinity, opp, color,
-        { renju, allowOverline, style, startTime, timeLimit }
+        { renju, allowOverline, style, deadline }
       );
     }
     ranked.push({ ...c, mmScore: val });
@@ -135,21 +140,9 @@ function linePatternScore(len, openEnds, options) {
     if (options.allowOverline) return PATTERN_SCORE.five;
     return len === 5 ? PATTERN_SCORE.five : 0;
   }
-  if (len === 4) {
-    if (openEnds >= 2) return PATTERN_SCORE.open4;
-    if (openEnds === 1) return PATTERN_SCORE.four;
-    return 0;
-  }
-  if (len === 3) {
-    if (openEnds >= 2) return PATTERN_SCORE.open3;
-    if (openEnds === 1) return PATTERN_SCORE.three;
-    return 0;
-  }
-  if (len === 2) {
-    if (openEnds >= 2) return PATTERN_SCORE.open2;
-    if (openEnds === 1) return PATTERN_SCORE.two;
-    return 0;
-  }
+  if (len === 4) return openEnds >= 2 ? PATTERN_SCORE.open4 : (openEnds === 1 ? PATTERN_SCORE.four : 0);
+  if (len === 3) return openEnds >= 2 ? PATTERN_SCORE.open3 : (openEnds === 1 ? PATTERN_SCORE.three : 0);
+  if (len === 2) return openEnds >= 2 ? PATTERN_SCORE.open2 : (openEnds === 1 ? PATTERN_SCORE.two : 0);
   return 0;
 }
 
@@ -187,7 +180,7 @@ function scoreCellQuick(board, x, y, myColor, oppColor, style, options) {
 }
 
 function minimax(board, depth, alpha, beta, currentColor, evalForColor, ctx) {
-  if (depth === 0 || Date.now() - ctx.startTime > ctx.timeLimit) {
+  if (depth === 0 || Date.now() > ctx.deadline) {
     return evaluateBoard(board, evalForColor, ctx.style, { allowOverline: ctx.allowOverline });
   }
   const opp = currentColor === BLACK ? WHITE : BLACK;
@@ -195,7 +188,7 @@ function minimax(board, depth, alpha, beta, currentColor, evalForColor, ctx) {
   const scored = candidates
     .map(c => ({ ...c, q: scoreCellQuick(board, c.x, c.y, currentColor, opp, 'balanced', { allowOverline: ctx.allowOverline }) }))
     .sort((a, b) => b.q - a.q)
-    .slice(0, 8);
+    .slice(0, 6);
 
   let useCandidates = scored;
   if (currentColor === BLACK && ctx.renju) {
@@ -209,7 +202,7 @@ function minimax(board, depth, alpha, beta, currentColor, evalForColor, ctx) {
   let best = maximizing ? -Infinity : Infinity;
 
   for (const c of useCandidates) {
-    if (Date.now() - ctx.startTime > ctx.timeLimit) break;
+    if (Date.now() > ctx.deadline) break;
     const next = cloneBoard(board);
     next[c.y][c.x] = currentColor;
     const sum = summarizeMove(next, c.x, c.y, currentColor);
@@ -301,8 +294,10 @@ function findImmediateBlock(board, color, candidates, options) {
 }
 
 function findVCF(board, color, maxDepth, options) {
-  const cands = generateCandidates(board);
+  if (Date.now() > options.deadline) return null;
+  const cands = filterAttackCandidates(board, color, options);
   for (const c of cands) {
+    if (Date.now() > options.deadline) return null;
     if (color === BLACK && options.renju && isForbidden(board, c.x, c.y, BLACK).forbidden) continue;
     const next = cloneBoard(board);
     next[c.y][c.x] = color;
@@ -317,9 +312,11 @@ function findVCF(board, color, maxDepth, options) {
 
 function vcfRecurse(board, color, depth, options) {
   if (depth <= 0) return false;
+  if (Date.now() > options.deadline) return false;
+
   const opp = color === BLACK ? WHITE : BLACK;
-  const cands = generateCandidates(board);
-  for (const c of cands) {
+  const oppCands = generateCandidates(board);
+  for (const c of oppCands) {
     const tmp = cloneBoard(board);
     tmp[c.y][c.x] = opp;
     const sum = summarizeMove(tmp, c.x, c.y, opp);
@@ -330,27 +327,38 @@ function vcfRecurse(board, color, depth, options) {
   if (blockSpots.length === 0) return false;
 
   for (const spot of blockSpots) {
+    if (Date.now() > options.deadline) return false;
     const afterBlock = cloneBoard(board);
     afterBlock[spot.y][spot.x] = opp;
+
     let canContinue = false;
-    const myCands = generateCandidates(afterBlock);
-    for (const c of myCands) {
+    const myAttackCands = filterAttackCandidates(afterBlock, color, options);
+    for (const c of myAttackCands) {
+      if (Date.now() > options.deadline) return false;
       if (color === BLACK && options.renju && isForbidden(afterBlock, c.x, c.y, BLACK).forbidden) continue;
       const next = cloneBoard(afterBlock);
       next[c.y][c.x] = color;
       const sum = summarizeMove(next, c.x, c.y, color);
-      if (options.allowOverline ? sum.five : sum.exactlyFive) {
-        canContinue = true; break;
-      }
+      if (options.allowOverline ? sum.five : sum.exactlyFive) { canContinue = true; break; }
       if (sum.openFours >= 1 || sum.fours >= 1) {
-        if (vcfRecurse(next, color, depth - 1, options)) {
-          canContinue = true; break;
-        }
+        if (vcfRecurse(next, color, depth - 1, options)) { canContinue = true; break; }
       }
     }
     if (!canContinue) return false;
   }
   return true;
+}
+
+function filterAttackCandidates(board, color, options) {
+  const cands = generateCandidates(board);
+  const out = [];
+  for (const c of cands) {
+    const next = cloneBoard(board);
+    next[c.y][c.x] = color;
+    const sum = summarizeMove(next, c.x, c.y, color);
+    if (sum.five || sum.openFours >= 1 || sum.fours >= 1) out.push(c);
+  }
+  return out;
 }
 
 function findFourBlockSpots(board, color, options) {
