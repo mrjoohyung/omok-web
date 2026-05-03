@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { LEVEL_CONFIG } from '../game/ai.js';
-import { listFamily, loadCurrentGame, listRecentGames } from '../firebase/store.js';
+import { listFamily, loadCurrentGame, listRecentGames, clearCurrentGame } from '../firebase/store.js';
 import { computePlayerPattern } from '../game/analytics.js';
 
 export default function StartScreen({
@@ -99,11 +99,15 @@ export default function StartScreen({
     onResume(pendingResume);
   };
 
-  const handleDiscardResume = () => {
+  const handleDiscardResume = async () => {
     if (!confirm('진행 중인 게임을 버리고 새로 시작할까요?')) return;
+    try {
+      await clearCurrentGame(user);
+    } catch (e) {
+      console.warn('진행 중 게임 삭제 실패:', e);
+    }
     setPendingResume(null);
   };
-
   return (
     <div className="app-shell">
       <div className="title">
