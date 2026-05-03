@@ -1,22 +1,30 @@
 import React from 'react';
 import { EMPTY, BLACK } from '../game/gameLogic.js';
 
+// SVG 내부 좌표는 고정. 실제 화면 크기는 CSS가 결정 (반응형).
 const PADDING = 28;
-const MAX_BOARD_PX = 640;
+const VIEW_BOX_SIZE = 700; // 내부 그리기 좌표계 (실제 px와 무관)
 
 export default function Board({
   board, size, lastMove, winningLine, onCellClick,
   threats, forbiddenCells, hintCell, disabled,
 }) {
-  const cellSize = Math.floor((MAX_BOARD_PX - PADDING * 2) / (size - 1));
+  // 셀 사이즈도 viewBox 기준으로 계산
+  const cellSize = Math.floor((VIEW_BOX_SIZE - PADDING * 2) / (size - 1));
   const innerSize = cellSize * (size - 1);
   const totalSize = innerSize + PADDING * 2;
   const xy = (i) => PADDING + i * cellSize;
   const starPoints = getStarPoints(size);
 
   return (
-    <svg className="board-svg" width={totalSize} height={totalSize} viewBox={`0 0 ${totalSize} ${totalSize}`}>
-      {/* SVG에서 쓸 그라데이션 정의 */}
+    <svg
+      className="board-svg"
+      width="100%"
+      height="auto"
+      viewBox={`0 0 ${totalSize} ${totalSize}`}
+      preserveAspectRatio="xMidYMid meet"
+      style={{ display: 'block', maxWidth: '640px', width: '100%' }}
+    >
       <defs>
         <radialGradient id="stoneBlack" cx="35%" cy="30%" r="65%">
           <stop offset="0%" stopColor="#5a5a5a" />
@@ -95,8 +103,21 @@ export default function Board({
       <g>
         {board.map((row, y) =>
           row.map((cell, x) => (
-            <rect key={`c-${x}-${y}`} className="board-cell-hit" x={xy(x) - cellSize / 2} y={xy(y) - cellSize / 2} width={cellSize} height={cellSize}
-              onClick={() => { if (disabled) return; if (cell !== EMPTY) return; onCellClick(x, y); }} />
+            <rect
+              key={`c-${x}-${y}`}
+              className="board-cell-hit"
+              x={xy(x) - cellSize / 2}
+              y={xy(y) - cellSize / 2}
+              width={cellSize}
+              height={cellSize}
+              onClick={() => { if (disabled) return; if (cell !== EMPTY) return; onCellClick(x, y); }}
+              onTouchEnd={(e) => {
+                if (disabled) return;
+                if (cell !== EMPTY) return;
+                e.preventDefault();
+                onCellClick(x, y);
+              }}
+            />
           ))
         )}
       </g>
