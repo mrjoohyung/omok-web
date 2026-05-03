@@ -320,7 +320,19 @@ useEffect(() => {
             <p style={{ fontSize: 12, color: 'var(--fg-muted)', fontFamily: 'JetBrains Mono, monospace' }}>총 {history.length}수</p>
             <div className="modal-actions">
               <button className="secondary-btn" onClick={onExit}>메뉴로</button>
-              <button className="primary-btn" onClick={() => location.reload()}>다시 두기</button>
+              <button className="primary-btn" onClick={() => {
+                setBoard(createBoard(boardSize));
+                setHistory([]);
+                setTurn(BLACK);
+                setWinner(null);
+                setWinningLine(null);
+                setWinReason(null);
+                setUndoUsed(isAIMode ? 0 : { [BLACK]: 0, [WHITE]: 0 });
+                setHintsLeft({ [BLACK]: 3, [WHITE]: 3 });
+                setHintCell(null);
+                setOverlinePending(null);
+                setAiThinking(false);
+              }}>다시 두기</button>
             </div>
           </div>
         </div>
