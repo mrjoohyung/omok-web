@@ -44,12 +44,14 @@ export default function StartScreen({
     return () => { mounted = false; };
   }, [user]);
 
+  // "나" 라벨은 항상 자동으로 추가됨 (가족 명단에 없어도)
+  const meName = user?.displayName && user.type === 'google' ? user.displayName : '나';
   const labelOptions = [
-    { id: 'anonymous', name: '익명' },
+    { id: 'self', name: meName + ' (나)' },
     ...familyList.map(f => ({ id: f.id, name: f.name })),
+    { id: 'anonymous', name: '익명' },
   ];
   const labelMap = Object.fromEntries(labelOptions.map(o => [o.id, o.name]));
-
   const handleStart = () => {
     const config = { mode, boardSize, renju, allowOverline };
     if (mode === 'pvp') {
