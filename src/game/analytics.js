@@ -283,3 +283,69 @@ function countAttackVsDefense(moves, userColor, size) {
   }
   return { attack, defense };
 }
+// =======================================================================
+// 적응형 난이도 추천 (B-3)
+// =======================================================================
+
+const MIN_GAMES_FOR_RECOMMEND = 5;
+const RECENT_WINDOW_FOR_RECOMMEND = 5;
+
+export function computeLevelRecommendation(games, currentLevel, statsByLevel) {
+  const realGames = games.filter(
+    g => g.mode === 'pvc' && g.practiceMode === false
+  );
+
+  if (realGames.length < MIN_GAMES_FOR_RECOMMEND) {
+    return {
+      enoughData: false,
+      have: realGames.length,
+      need: MIN_GAMES_FOR_RECOMMEND,
+    };
+  }
+
+  const sorted = [...realGames].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+  const recent = sorted.slice(0, RECENT_WINDOW_FOR_RECOMMEND);
+  const recentWins = recent.filter(g => g.userWon === true).length;
+  const recentRate = recentWins / recent.length;
+
+  const currentLevelGames = realGames.filter(g => g.aiLevel === currentLevel);
+  let currentLevelRate = null;
+  if (currentLevelGames.length >= 3) {
+    const cWins = currentLevelGames.filter(g => g.userWon === true).length;
+    currentLevelRate = cWins / currentLevelGames.length;
+  }
+
+  const rate = currentLevelRate !== null ? currentLevelRate : recentRate;
+
+  let suggestion = null;
+  let reason = null;
+
+  if (rate >= 0.65 && currentLevel < 5) {
+    suggestion = currentLevel + 1;
+    if (currentLevelRate !== null) {
+      reason = `Lv${currentLevel}에서 승률 ${Math.round(rate * 100)}%로 안정적이에요. Lv${suggestion}도 도전해보세요!`;
+    } else {
+      reason = `최근 ${recent.length}판 승률 ${Math.round(rate * 100)}%로 좋아요. Lv${suggestion}도 도전해보세요!`;
+    }
+  } else if (rate <= 0.30 && currentLevel > 1) {
+    suggestion = currentLevel - 1;
+    if (currentLevelRate !== null) {
+      reason = `Lv${currentLevel}이 좀 어려운 것 같아요. Lv${suggestion}부터 차근차근 어떨까요?`;
+    } else {
+      reason = `최근 승률이 낮아요. Lv${suggestion}부터 차근차근 어떨까요?`;
+    }
+  } else {
+    suggestion = currentLevel;
+    reason = `Lv${currentLevel}이 지금 실력에 잘 맞아요.`;
+  }
+
+  return {
+    enoughData: true,
+    suggestion,
+    reason,
+    recentRate,
+    currentLevelRate,
+    recentGames: recent.length,
+    currentLevelGames: currentLevelGames.length,
+  };
+}
