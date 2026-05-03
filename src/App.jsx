@@ -3,7 +3,8 @@ import LoginScreen from './components/LoginScreen.jsx';
 import StartScreen from './components/StartScreen.jsx';
 import GameScreen from './components/GameScreen.jsx';
 import FamilyManagement from './components/FamilyManagement.jsx';
-import { watchAuthState, logout } from './firebase/auth.js';
+import AnalysisScreen from './components/AnalysisScreen.jsx';
+import { watchAuthState, logout, clearGuestId } from './firebase/auth.js';
 
 export default function App() {
   const [screen, setScreen] = useState('login');
@@ -73,6 +74,18 @@ export default function App() {
     setScreen('login');
   };
 
+  const handleAccountDeleted = async () => {
+    if (user?.type === 'google') {
+      try { await logout(); } catch (e) { /* 무시 */ }
+    } else if (user?.type === 'guest') {
+      clearGuestId();
+    }
+    setUser(null);
+    setGameConfig(null);
+    setResumeState(null);
+    setScreen('login');
+  };
+
   if (authChecking) {
     return (
       <div className="app-shell">
@@ -101,7 +114,13 @@ export default function App() {
   }
 
   if (screen === 'analysis') {
-    return <AnalysisPlaceholder onBack={() => setScreen('start')} />;
+    return (
+      <AnalysisScreen
+        user={user}
+        onBack={() => setScreen('start')}
+        onAccountDeleted={handleAccountDeleted}
+      />
+    );
   }
 
   if (screen === 'start') {
@@ -126,25 +145,5 @@ export default function App() {
       user={user}
       resumeState={resumeState}
     />
-  );
-}
-
-function AnalysisPlaceholder({ onBack }) {
-  return (
-    <div className="app-shell">
-      <div className="title">
-        <span>Omok</span>
-        <span className="han">五目</span>
-      </div>
-      <div className="subtitle">— 분석 / 전적 —</div>
-      <div className="panel">
-        <h2>분석 / 전적</h2>
-        <p style={{ fontSize: 14, color: 'var(--fg-muted)', lineHeight: 1.7 }}>
-          이 화면은 다음 단계에서 정식으로 만들어집니다.
-          <br />지금은 게임을 두시면 데이터가 백그라운드에 잘 쌓이고 있어요.
-        </p>
-      </div>
-      <button className="secondary-btn" onClick={onBack}>← 메뉴로</button>
-    </div>
   );
 }
