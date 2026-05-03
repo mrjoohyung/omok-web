@@ -1,7 +1,3 @@
-// =======================================================================
-// LoginScreen — 첫 진입 시 보이는 로그인/게스트 선택 화면
-// =======================================================================
-
 import React, { useState } from 'react';
 import { loginWithGoogle, getOrCreateGuestId } from '../firebase/auth.js';
 
@@ -54,33 +50,25 @@ export default function LoginScreen({ onAuthSuccess, onGuestStart, onThemeChange
           간단히 둘러보고 싶으시면 게스트 모드로 시작하세요.
         </p>
 
-        <button
-          className="primary-btn"
-          onClick={handleGoogleLogin}
-          disabled={loading}
-          style={{ width: '100%', marginBottom: 12 }}
-        >
+        <button className="primary-btn" onClick={handleGoogleLogin} disabled={loading}
+          style={{ width: '100%', marginBottom: 12 }}>
           {loading ? '로그인 중…' : 'Google로 로그인'}
         </button>
 
-        <button
-          className="secondary-btn"
-          onClick={handleGuest}
-          disabled={loading}
-          style={{ width: '100%', padding: '12px 16px' }}
-        >
+        <button className="secondary-btn" onClick={handleGuest} disabled={loading}
+          style={{ width: '100%', padding: '12px 16px' }}>
           게스트로 시작
         </button>
 
         {error && (
-          <p style={{ fontSize: 13, color: '#e74c3c', marginTop: 14, textAlign: 'center' }}>
-            {error}
-          </p>
+          <p style={{ fontSize: 13, color: '#e74c3c', marginTop: 14, textAlign: 'center' }}>{error}</p>
         )}
 
         <div style={{ marginTop: 24, fontSize: 11, color: 'var(--fg-muted)', lineHeight: 1.5, fontFamily: 'JetBrains Mono, monospace' }}>
           ℹ 게스트 모드는 이 브라우저에서만 데이터가 유지됩니다.
           나중에 Google 로그인하시면 기존 게스트 데이터를 그대로 가져올 수 있습니다.
+          <br/>
+          ℹ 개인정보 보호를 위해, 한 기기에서 한 게임 기록을 다른 계정에서 접근할 수 없습니다.
         </div>
       </div>
 
