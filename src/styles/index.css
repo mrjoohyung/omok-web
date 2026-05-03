@@ -241,14 +241,13 @@ body {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   padding: 8px 16px;
-  : transparent;
+  background: var(--bg-2);
   color: var(--fg);
   border: 1px solid var(--border);
   border-radius: 3px;
   cursor: pointer;
   transition: all 0.18s ease;
 }
-
 .secondary-btn:hover:not(:disabled) {
   border-color: var(--accent);
   color: var(--accent);
