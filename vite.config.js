@@ -10,9 +10,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg', 'icon-192.png', 'icon-512.png'],
       manifest: {
-        name: '오목 (Omok)',
-        short_name: '오목',
-        description: '온라인 오목 게임 — gomoku · five in a row',
+        name: '주형이의 오목 with 덤보',
+        short_name: '주형이의 오목',
+        description: '주형이의 오목 with 덤보 — gomoku · five in a row',
         theme_color: '#3a2818',
         background_color: '#3a2818',
         display: 'standalone',
