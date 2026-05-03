@@ -54,8 +54,6 @@ export default function StartScreen({
     })();
     return () => { mounted = false; };
   }, [user]);
-  return () => { mounted = false; };
-  }, [user]);
 
   // AI 레벨 바뀌면 추천 재계산
   useEffect(() => {
