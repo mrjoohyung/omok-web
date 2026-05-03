@@ -1,7 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { LEVEL_CONFIG } from '../game/ai.js';
+import { listFamily, loadCurrentGame } from '../firebase/store.js';
 
-export default function StartScreen({ onStart, onThemeChange, currentTheme, user, onLogout }) {
+export default function StartScreen({
+  onStart, onThemeChange, currentTheme,
+  user, onLogout, onOpenFamily, onOpenAnalysis, onResume,
+}) {
   const [mode, setMode] = useState('pvp');
   const [boardSize, setBoardSize] = useState(15);
   const [renju, setRenju] = useState(false);
@@ -10,6 +14,9 @@ export default function StartScreen({ onStart, onThemeChange, currentTheme, user
   const [undoLimit, setUndoLimit] = useState(1);
   const [hintEnabled, setHintEnabled] = useState(true);
   const [showThreatsPvp, setShowThreatsPvp] = useState(false);
+  const [pvpRecordMode, setPvpRecordMode] = useState('guest');
+  const [blackLabel, setBlackLabel] = useState('anonymous');
+  const [whiteLabel, setWhiteLabel] = useState('anonymous');
 
   const [aiLevel, setAiLevel] = useState(3);
   const [aiStyle, setAiStyle] = useState('balanced');
@@ -17,12 +24,44 @@ export default function StartScreen({ onStart, onThemeChange, currentTheme, user
   const [practiceMode, setPracticeMode] = useState(true);
   const [showThreatsPvc, setShowThreatsPvc] = useState(false);
 
+  const [familyList, setFamilyList] = useState([]);
+  const [pendingResume, setPendingResume] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      if (!user) return;
+      try {
+        const list = await listFamily(user);
+        if (mounted) setFamilyList(list);
+      } catch (e) { console.warn('가족 명단 로드 실패:', e); }
+      try {
+        const cur = await loadCurrentGame(user);
+        if (mounted && cur) setPendingResume(cur);
+      } catch (e) { console.warn('진행 중 게임 확인 실패:', e); }
+    })();
+    return () => { mounted = false; };
+  }, [user]);
+
+  const labelOptions = [
+    { id: 'anonymous', name: '익명' },
+    ...familyList.map(f => ({ id: f.id, name: f.name })),
+  ];
+  const labelMap = Object.fromEntries(labelOptions.map(o => [o.id, o.name]));
+
   const handleStart = () => {
     const config = { mode, boardSize, renju, allowOverline };
     if (mode === 'pvp') {
       config.undoLimit = undoLimit;
       config.hintEnabled = hintEnabled;
       config.showThreats = showThreatsPvp;
+      config.pvpRecordable = pvpRecordMode === 'tracked';
+      if (pvpRecordMode === 'tracked') {
+        config.blackLabel = blackLabel;
+        config.whiteLabel = whiteLabel;
+        config.blackLabelName = labelMap[blackLabel] || '익명';
+        config.whiteLabelName = labelMap[whiteLabel] || '익명';
+      }
     } else {
       config.aiLevel = aiLevel;
       config.aiStyle = aiStyle;
@@ -35,6 +74,16 @@ export default function StartScreen({ onStart, onThemeChange, currentTheme, user
     onStart(config);
   };
 
+  const handleResume = () => {
+    if (!pendingResume) return;
+    onResume(pendingResume);
+  };
+
+  const handleDiscardResume = () => {
+    if (!confirm('진행 중인 게임을 버리고 새로 시작할까요?')) return;
+    setPendingResume(null);
+  };
+
   return (
     <div className="app-shell">
       <div className="title">
@@ -42,12 +91,13 @@ export default function StartScreen({ onStart, onThemeChange, currentTheme, user
         <span className="han">五目</span>
       </div>
       <div className="subtitle">— gomoku · five in a row —</div>
+
       {user && (
         <div style={{
           display: 'flex', alignItems: 'center', gap: 12,
           padding: '8px 16px', background: 'var(--panel)',
           border: '1px solid var(--border)', borderRadius: 4,
-          marginBottom: 20, fontSize: 13,
+          marginBottom: 14, fontSize: 13, maxWidth: 560, width: '100%',
         }}>
           {user.photoURL && (
             <img src={user.photoURL} alt="" style={{ width: 24, height: 24, borderRadius: '50%' }} />
@@ -72,6 +122,25 @@ export default function StartScreen({ onStart, onThemeChange, currentTheme, user
           >
             {user.type === 'google' ? '로그아웃' : '로그인 화면으로'}
           </button>
+        </div>
+      )}
+
+      {pendingResume && (
+        <div className="panel" style={{ borderColor: 'var(--accent)' }}>
+          <h2>진행 중인 대국</h2>
+          <p style={{ fontSize: 13, color: 'var(--fg-muted)', marginBottom: 14 }}>
+            저장된 게임이 있습니다. 이어서 두시겠어요?
+            <br/>
+            <span style={{ fontSize: 11, fontFamily: 'JetBrains Mono, monospace' }}>
+              {pendingResume.config?.boardSize}×{pendingResume.config?.boardSize} · 수 {pendingResume.history?.length || 0}
+            </span>
+          </p>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="primary-btn" onClick={handleResume} style={{ fontSize: 14, padding: '8px 18px' }}>
+              이어 두기
+            </button>
+            <button className="secondary-btn" onClick={handleDiscardResume}>버리기</button>
+          </div>
         </div>
       )}
 
@@ -115,7 +184,7 @@ export default function StartScreen({ onStart, onThemeChange, currentTheme, user
           </div>
         </div>
         <div className="option-row">
-          <div><label>6목 승리 인정</label><div className="hint-text">렌주에서는 강제로 OFF (장목 금수)</div></div>
+          <div><label>6목 승리 인정</label><div className="hint-text">렌주에서는 강제로 OFF</div></div>
           <div className="choice-group">
             <button className={`choice-btn ${allowOverline && !renju ? 'active' : ''}`} onClick={() => !renju && setAllowOverline(true)} disabled={renju}>인정 (6목+)</button>
             <button className={`choice-btn ${!allowOverline || renju ? 'active' : ''}`} onClick={() => setAllowOverline(false)}>정확히 5목만</button>
@@ -124,31 +193,97 @@ export default function StartScreen({ onStart, onThemeChange, currentTheme, user
       </div>
 
       {mode === 'pvp' && (
-        <div className="panel">
-          <h2>2인용 설정</h2>
-          <div className="option-row">
-            <label>무르기 횟수</label>
-            <div className="choice-group">
-              {[{ v: 0, l: '0회' }, { v: 1, l: '1회' }, { v: 3, l: '3회' }, { v: -1, l: '무제한' }].map(({ v, l }) => (
-                <button key={v} className={`choice-btn ${undoLimit === v ? 'active' : ''}`} onClick={() => setUndoLimit(v)}>{l}</button>
-              ))}
+        <>
+          <div className="panel">
+            <h2>2인용 — 기록 방식</h2>
+            <div className="option-row">
+              <div><label>기록</label>
+                <div className="hint-text">
+                  {pvpRecordMode === 'guest'
+                    ? '이 한 판은 통계에 반영하지 않습니다'
+                    : '가족 라벨로 게임 기록 + 라벨별 전적 누적'}
+                </div>
+              </div>
+              <div className="choice-group">
+                <button className={`choice-btn ${pvpRecordMode === 'guest' ? 'active' : ''}`} onClick={() => setPvpRecordMode('guest')}>게스트 (기록 X)</button>
+                <button className={`choice-btn ${pvpRecordMode === 'tracked' ? 'active' : ''}`} onClick={() => setPvpRecordMode('tracked')}>사용자 정보로</button>
+              </div>
+            </div>
+
+            {pvpRecordMode === 'tracked' && (
+              <>
+                <div className="option-row">
+                  <div><label>흑 (선공)</label></div>
+                  <select
+                    value={blackLabel}
+                    onChange={(e) => setBlackLabel(e.target.value)}
+                    style={{
+                      padding: '6px 10px', fontSize: 13, borderRadius: 3,
+                      background: 'var(--bg-2)', color: 'var(--fg)',
+                      border: '1px solid var(--border)', fontFamily: 'inherit',
+                    }}
+                  >
+                    {labelOptions.map(o => (
+                      <option key={o.id} value={o.id}>{o.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="option-row">
+                  <div><label>백 (후공)</label></div>
+                  <select
+                    value={whiteLabel}
+                    onChange={(e) => setWhiteLabel(e.target.value)}
+                    style={{
+                      padding: '6px 10px', fontSize: 13, borderRadius: 3,
+                      background: 'var(--bg-2)', color: 'var(--fg)',
+                      border: '1px solid var(--border)', fontFamily: 'inherit',
+                    }}
+                  >
+                    {labelOptions.map(o => (
+                      <option key={o.id} value={o.id}>{o.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="option-row" style={{ borderBottom: 'none' }}>
+                  <button className="secondary-btn" onClick={onOpenFamily} style={{ width: '100%' }}>
+                    👥 가족 명단 관리
+                  </button>
+                </div>
+                <div className="option-row" style={{ borderBottom: 'none', padding: '4px 0' }}>
+                  <div className="hint-text" style={{ fontSize: 11, lineHeight: 1.5 }}>
+                    ℹ 개인정보 보호를 위해 한 기기에서 한 게임 기록을 다른 계정에서 접근할 수 없습니다.
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="panel">
+            <h2>2인용 옵션</h2>
+            <div className="option-row">
+              <div><label>무르기 횟수 (1인당)</label></div>
+              <div className="choice-group">
+                {[{ v: 0, l: '0회' }, { v: 1, l: '1회' }, { v: 3, l: '3회' }, { v: -1, l: '무제한' }].map(({ v, l }) => (
+                  <button key={v} className={`choice-btn ${undoLimit === v ? 'active' : ''}`} onClick={() => setUndoLimit(v)}>{l}</button>
+                ))}
+              </div>
+            </div>
+            <div className="option-row">
+              <div><label>힌트 사용</label><div className="hint-text">흑/백 각자 3회</div></div>
+              <div className="choice-group">
+                <button className={`choice-btn ${hintEnabled ? 'active' : ''}`} onClick={() => setHintEnabled(true)}>사용</button>
+                <button className={`choice-btn ${!hintEnabled ? 'active' : ''}`} onClick={() => setHintEnabled(false)}>사용 안 함</button>
+              </div>
+            </div>
+            <div className="option-row">
+              <div><label>위협 마커 표시</label><div className="hint-text">상대가 만들 수 있는 3 / 3-3 / 4 자리</div></div>
+              <div className="choice-group">
+                <button className={`choice-btn ${showThreatsPvp ? 'active' : ''}`} onClick={() => setShowThreatsPvp(true)}>표시</button>
+                <button className={`choice-btn ${!showThreatsPvp ? 'active' : ''}`} onClick={() => setShowThreatsPvp(false)}>숨김</button>
+              </div>
             </div>
           </div>
-          <div className="option-row">
-            <div><label>힌트 사용</label><div className="hint-text">흑/백 각자 3회</div></div>
-            <div className="choice-group">
-              <button className={`choice-btn ${hintEnabled ? 'active' : ''}`} onClick={() => setHintEnabled(true)}>사용</button>
-              <button className={`choice-btn ${!hintEnabled ? 'active' : ''}`} onClick={() => setHintEnabled(false)}>사용 안 함</button>
-            </div>
-          </div>
-          <div className="option-row">
-            <div><label>위협 마커 표시</label><div className="hint-text">상대가 만들 수 있는 3 / 3-3 / 4 자리</div></div>
-            <div className="choice-group">
-              <button className={`choice-btn ${showThreatsPvp ? 'active' : ''}`} onClick={() => setShowThreatsPvp(true)}>표시</button>
-              <button className={`choice-btn ${!showThreatsPvp ? 'active' : ''}`} onClick={() => setShowThreatsPvp(false)}>숨김</button>
-            </div>
-          </div>
-        </div>
+        </>
       )}
 
       {mode === 'pvc' && (
@@ -156,7 +291,7 @@ export default function StartScreen({ onStart, onThemeChange, currentTheme, user
           <h2>컴퓨터 대전 설정</h2>
           <div className="option-row">
             <div><label>모드</label>
-              <div className="hint-text">{practiceMode ? '연습: 무르기 무제한, 위협 마커 가능, 금수 자리 차단' : '실전: 무르기 1회, 위협 마커 없음, 금수 두면 즉시 패배'}</div>
+              <div className="hint-text">{practiceMode ? '연습: 무르기 무제한, 위협 마커 가능' : '실전: 무르기 1회, 통계 반영'}</div>
             </div>
             <div className="choice-group">
               <button className={`choice-btn ${practiceMode ? 'active' : ''}`} onClick={() => setPracticeMode(true)}>연습</button>
@@ -165,7 +300,7 @@ export default function StartScreen({ onStart, onThemeChange, currentTheme, user
           </div>
           <div className="option-row">
             <div><label>AI 레벨</label>
-              <div className="hint-text">Lv{aiLevel} · {LEVEL_CONFIG[aiLevel]?.label}{aiLevel >= 4 ? ' · 강함' : ''}</div>
+              <div className="hint-text">Lv{aiLevel} · {LEVEL_CONFIG[aiLevel]?.label}</div>
             </div>
             <div className="choice-group">
               {[1, 2, 3, 4, 5].map(L => (
@@ -188,7 +323,7 @@ export default function StartScreen({ onStart, onThemeChange, currentTheme, user
             </div>
           </div>
           <div className="option-row">
-            <div><label>내 색</label><div className="hint-text">흑이 선공</div></div>
+            <div><label>내 색</label></div>
             <div className="choice-group">
               <button className={`choice-btn ${userColor === 'black' ? 'active' : ''}`} onClick={() => setUserColor('black')}>흑 (선공)</button>
               <button className={`choice-btn ${userColor === 'white' ? 'active' : ''}`} onClick={() => setUserColor('white')}>백 (후공)</button>
@@ -196,23 +331,24 @@ export default function StartScreen({ onStart, onThemeChange, currentTheme, user
           </div>
           {practiceMode && (
             <div className="option-row">
-              <div><label>위협 마커 표시</label><div className="hint-text">연습 모드 전용</div></div>
+              <div><label>위협 마커 표시</label></div>
               <div className="choice-group">
                 <button className={`choice-btn ${showThreatsPvc ? 'active' : ''}`} onClick={() => setShowThreatsPvc(true)}>표시</button>
                 <button className={`choice-btn ${!showThreatsPvc ? 'active' : ''}`} onClick={() => setShowThreatsPvc(false)}>숨김</button>
               </div>
             </div>
           )}
-          <div className="option-row" style={{ borderBottom: 'none' }}>
-            <div className="hint-text" style={{ fontSize: 11, lineHeight: 1.5 }}>
-              💡 힌트는 항상 사용 가능 (게임당 3회). 실전 모드 통계는 추후 적응형 난이도에 반영됩니다 (3단계).
-            </div>
-          </div>
         </div>
       )}
 
       <button className="primary-btn" onClick={handleStart} style={{ marginTop: 8 }}>대국 시작</button>
-      <div className="footer">v0.2 · stage 2 · ai opponent</div>
+
+      <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+        <button className="secondary-btn" onClick={onOpenAnalysis}>📊 분석 / 전적</button>
+        <button className="secondary-btn" onClick={onOpenFamily}>👥 가족 명단</button>
+      </div>
+
+      <div className="footer">v0.3 · stage 3 · cloud sync</div>
     </div>
   );
 }
