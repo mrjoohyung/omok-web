@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { LEVEL_CONFIG } from '../game/ai.js';
 
-export default function StartScreen({ onStart, onThemeChange, currentTheme }) {
+export default function StartScreen({ onStart, onThemeChange, currentTheme, user, onLogout }) {
   const [mode, setMode] = useState('pvp');
   const [boardSize, setBoardSize] = useState(15);
   const [renju, setRenju] = useState(false);
@@ -42,6 +42,38 @@ export default function StartScreen({ onStart, onThemeChange, currentTheme }) {
         <span className="han">五目</span>
       </div>
       <div className="subtitle">— gomoku · five in a row —</div>
+      {user && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 12,
+          padding: '8px 16px', background: 'var(--panel)',
+          border: '1px solid var(--border)', borderRadius: 4,
+          marginBottom: 20, fontSize: 13,
+        }}>
+          {user.photoURL && (
+            <img src={user.photoURL} alt="" style={{ width: 24, height: 24, borderRadius: '50%' }} />
+          )}
+          <span style={{ color: 'var(--fg)' }}>
+            {user.displayName}
+            {user.type === 'guest' && (
+              <span style={{ fontSize: 11, color: 'var(--fg-muted)', marginLeft: 8, fontFamily: 'JetBrains Mono, monospace' }}>
+                (게스트)
+              </span>
+            )}
+          </span>
+          <button
+            onClick={onLogout}
+            style={{
+              marginLeft: 'auto', background: 'transparent',
+              border: '1px solid var(--border)', color: 'var(--fg-muted)',
+              fontSize: 11, padding: '4px 10px', borderRadius: 3,
+              cursor: 'pointer', fontFamily: 'JetBrains Mono, monospace',
+              letterSpacing: '0.08em', textTransform: 'uppercase',
+            }}
+          >
+            {user.type === 'google' ? '로그아웃' : '로그인 화면으로'}
+          </button>
+        </div>
+      )}
 
       <div className="panel" style={{ paddingTop: 18, paddingBottom: 18 }}>
         <div className="option-row" style={{ borderBottom: 'none', padding: 0 }}>
