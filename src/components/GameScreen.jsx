@@ -14,8 +14,8 @@ export default function GameScreen({ config, onExit, user, resumeState }) {
     aiLevel, aiStyle, userColor, practiceMode,
     blackLabel, whiteLabel, blackLabelName, whiteLabelName,
     pvpRecordable,
+    exploitWeakness, dirWeights, weaknessStrength,
   } = config;
-
   const isAIMode = mode === 'pvc';
   const userColorVal = userColor === 'white' ? WHITE : BLACK;
   const aiColorVal = userColor === 'white' ? BLACK : WHITE;
@@ -201,6 +201,7 @@ export default function GameScreen({ config, onExit, user, resumeState }) {
       try {
         const move = chooseAIMove(board, aiColorVal, {
           level: aiLevel, style: aiStyle, renju, allowOverline, timeLimit: 3000,
+          exploitWeakness, dirWeights, weaknessStrength,
         });
         if (move) {
           const result = placeStoneInternal(board, move.x, move.y, aiColorVal);
