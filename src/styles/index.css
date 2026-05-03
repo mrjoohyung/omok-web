@@ -185,12 +185,17 @@ body {
   font-size: 13px;
   padding: 6px 14px;
   border: 1px solid var(--border);
-  : transparent;
+  background: var(--bg-2);
   color: var(--fg);
   cursor: pointer;
   border-radius: 3px;
   transition: all 0.18s ease;
   letter-spacing: 0.04em;
+  opacity: 0.85;
+}
+
+.choice-btn:hover:not(:disabled) {
+  opacity: 1;
 }
 
 .choice-btn:hover:not(:disabled) {
@@ -199,10 +204,11 @@ body {
 }
 
 .choice-btn.active {
-  : var(--accent);
+  background: var(--accent);
   color: var(--bg);
   border-color: var(--accent);
   font-weight: 500;
+  opacity: 1;
 }
 
 .choice-btn:disabled {
