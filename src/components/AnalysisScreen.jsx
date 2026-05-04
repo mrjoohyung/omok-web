@@ -16,6 +16,7 @@ export default function AnalysisScreen({ user, onBack, onAccountDeleted }) {
   const [familyStats, setFamilyStats] = useState([]);
   const [recentGames, setRecentGames] = useState([]);
   const [allGamesForChart, setAllGamesForChart] = useState([]);
+  const [showStatsInfo, setShowStatsInfo] = useState(false);
   const [error, setError] = useState(null);
 
   const refresh = useCallback(async () => {
@@ -102,14 +103,66 @@ export default function AnalysisScreen({ user, onBack, onAccountDeleted }) {
         </div>
       )}
 
+      {/* === 전체 요약 === */}
       <div className="panel">
-        <h2>전체 요약</h2>
-        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', fontSize: 14, color: 'var(--fg)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h2 style={{ margin: 0 }}>전체 요약</h2>
+          <button
+            onClick={() => setShowStatsInfo(true)}
+            style={{
+              background: 'transparent',
+              border: '1px solid var(--border)',
+              color: 'var(--fg-muted)',
+              borderRadius: '50%',
+              width: 24, height: 24,
+              fontSize: 13,
+              cursor: 'pointer',
+              fontFamily: 'JetBrains Mono, monospace',
+            }}
+            title="어떤 게임이 통계에 반영되는지 보기"
+          >
+            i
+          </button>
+        </div>
+        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', fontSize: 14, color: 'var(--fg)', marginTop: 16 }}>
           <SummaryItem label="총 게임" value={`${grandTotal}판`} />
           <SummaryItem label="AI 대전" value={`${aiTotal}판`} sub={`${aiWins}승 ${aiLosses}패 ${aiDraws}무`} />
           <SummaryItem label="2인용" value={`${pvpTotal}판`} />
         </div>
       </div>
+
+      {/* 통계 설명 모달 */}
+      {showStatsInfo && (
+        <div className="modal-backdrop" onClick={() => setShowStatsInfo(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>통계 반영 기준</h3>
+            <div style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--fg)' }}>
+              <p style={{ marginBottom: 10 }}><b>✅ 통계에 반영되는 게임</b></p>
+              <ul style={{ paddingLeft: 18, marginBottom: 14 }}>
+                <li>AI 대전 (모든 레벨, 연습/실전 모두)</li>
+                <li>2인용 — "통계 반영" 모드로 시작한 게임</li>
+                <li>온라인 대국 — 정상 종료 (승부, 항복, 5목, 무승부)</li>
+              </ul>
+              <p style={{ marginBottom: 10 }}><b>❌ 반영되지 않는 게임</b></p>
+              <ul style={{ paddingLeft: 18, marginBottom: 14 }}>
+                <li>2인용 — "게스트 플레이" 모드로 시작한 게임</li>
+                <li>온라인 — 3분 끊김 타임아웃으로 종료된 게임</li>
+                <li>아직 끝나지 않은 진행 중 게임</li>
+              </ul>
+              <p style={{ marginBottom: 10 }}><b>📊 분석 항목별 최소 게임</b></p>
+              <ul style={{ paddingLeft: 18 }}>
+                <li>강점 & 약점: 5판 이상</li>
+                <li>실력 추세 그래프: 5판 이상</li>
+                <li>플레이 패턴 (방향 약점 등): 20판 이상</li>
+                <li>적응형 난이도 추천: 실전 모드 5판 이상</li>
+              </ul>
+            </div>
+            <div className="modal-actions">
+              <button className="primary-btn" onClick={() => setShowStatsInfo(false)}>확인</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="panel">
         <h2>강점 & 약점</h2>
@@ -178,7 +231,7 @@ export default function AnalysisScreen({ user, onBack, onAccountDeleted }) {
             그래프를 그리려면 AI 대전 5판 이상이 필요합니다.
             <br/>
             <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>
-              현재 {trendSeries.length}/5판
+              현재 {allGamesForChart.filter(g => g.mode === 'pvc').length}/5판
             </span>
           </p>
         ) : (
@@ -402,7 +455,7 @@ function RecentGameRow({ game, onDelete }) {
     if (game.winner === 'draw') result = '무';
     else if (game.userWon) result = '승';
     else result = '패';
-    info = `AI Lv${game.aiLevel} (${modeLabel}, ${styleLabel}) · 나(${colorLabel}) · ${result}`;
+    info = `🤖 AI Lv${game.aiLevel} (${modeLabel}, ${styleLabel}) · 나(${colorLabel}) · ${result}`;
   } else {
     const blackName = game.blackLabelName || '익명';
     const whiteName = game.whiteLabelName || '익명';
@@ -410,7 +463,8 @@ function RecentGameRow({ game, onDelete }) {
     if (game.winner === 'draw') result = '무승부';
     else if (game.winner === 'black') result = `${blackName} 승`;
     else result = `${whiteName} 승`;
-    info = `2인용 · ${blackName}(흑) vs ${whiteName}(백) · ${result}`;
+    const modePrefix = game.isOnline ? '🌐 온라인' : '👥 2인용';
+    info = `${modePrefix} · ${blackName}(흑) vs ${whiteName}(백) · ${result}`;
   }
 
   const moveCount = game.moves?.length || 0;
