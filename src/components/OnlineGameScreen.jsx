@@ -6,6 +6,7 @@ import {
 import {
   makeMove, endGame, resignGame, leaveRoom,
   requestReplay, acceptReplay, declineReplay,
+  updateHeartbeat, forceTerminate, timeoutDraw,
 } from '../firebase/online.js';
 import { saveGameResult } from '../firebase/store.js';
 import { ref, update, onValue, off } from 'firebase/database';
@@ -49,11 +50,17 @@ export default function OnlineGameScreen({
   const winReason = roomData.winReason;
   const winningLine = roomData.winningLine;
 
+  // 결과가 났을 때 본인 계정 통계에 저장 (한 번만)
+  // 단, winReason === 'timeout' 인 경우 (끊김으로 인한 종료) 통계 미반영
   const [statsSaved, setStatsSaved] = useState(false);
   useEffect(() => {
     if (!winner) return;
     if (statsSaved) return;
     if (moves.length === 0) return;
+    if (winReason === 'timeout') {
+      setStatsSaved(true);
+      return;
+    }
 
     (async () => {
       try {
@@ -270,10 +277,71 @@ export default function OnlineGameScreen({
     }
     onExit();
   };
+  // ===== Heartbeat (5초마다 lastActive 갱신) =====
+  useEffect(() => {
+    if (winner) return;
+    let cancelled = false;
+    const tick = async () => {
+      if (cancelled) return;
+      try {
+        await updateHeartbeat({ roomCode, role });
+      } catch (e) {}
+    };
+    tick();
+    const interval = setInterval(tick, 5000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [roomCode, role, winner]);
 
+  // ===== 끊김 감지 =====
+  const TIMEOUT_DISCONNECT_MS = 30_000;
+  const TIMEOUT_TERMINATE_MS = 3 * 60_000;
+
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (winner) return;
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [winner]);
+
+  const opponentLastActive = role === 'host' ? roomData.lastActiveGuest : roomData.lastActiveHost;
+  const myLastActive = role === 'host' ? roomData.lastActiveHost : roomData.lastActiveGuest;
+  const opponentSilentMs = opponentLastActive ? (now - opponentLastActive) : 0;
+  const mySilentMs = myLastActive ? (now - myLastActive) : 0;
+
+  const opponentDisconnected = !winner && opponentLastActive && opponentSilentMs > TIMEOUT_DISCONNECT_MS;
+  const bothDisconnected = !winner && opponentDisconnected && mySilentMs > TIMEOUT_DISCONNECT_MS;
+  const opponentTimeoutSecondsLeft = Math.max(0,
+    Math.ceil((TIMEOUT_TERMINATE_MS - opponentSilentMs) / 1000));
+  const canTerminate = opponentDisconnected && opponentSilentMs > TIMEOUT_TERMINATE_MS;
+
+  useEffect(() => {
+    if (winner) return;
+    if (!bothDisconnected) return;
+    if (mySilentMs > TIMEOUT_TERMINATE_MS && opponentSilentMs > TIMEOUT_TERMINATE_MS) {
+      timeoutDraw({ roomCode }).catch(() => {});
+    }
+  }, [bothDisconnected, mySilentMs, opponentSilentMs, winner, roomCode]);
+
+  const handleForceTerminate = async () => {
+    if (!confirm(`${opponentLabelName}이 3분간 응답이 없습니다. 게임을 종료하시겠어요?\n(본인 승리 처리, 단 통계에는 반영되지 않습니다.)`)) return;
+    await forceTerminate({ roomCode, byColor: myColorStr });
+  };
+
+  const formatMMSS = (totalSec) => {
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+ // ===== 결과 메시지 =====
   const resultMessage = useMemo(() => {
     if (!winner) return null;
-    if (winner === 'draw') return { title: '무승부', body: '보드가 가득 찼습니다.' };
+    if (winner === 'draw') {
+      if (winReason === 'timeout') {
+        return { title: '무승부', body: '양쪽 모두 응답이 없어 게임이 종료되었습니다. (통계 미반영)' };
+      }
+      return { title: '무승부', body: '보드가 가득 찼습니다.' };
+    }
     const iWon = winner === myColorStr;
     if (winReason === 'resign') {
       return iWon
@@ -284,6 +352,11 @@ export default function OnlineGameScreen({
       return iWon
         ? { title: '승리', body: '5목 완성!' }
         : { title: '패배', body: '상대가 5목을 완성했습니다.' };
+    }
+    if (winReason === 'timeout') {
+      return iWon
+        ? { title: '승리', body: '상대가 3분간 응답이 없어 게임이 종료되었습니다. (통계 미반영)' }
+        : { title: '패배', body: '본인이 응답하지 않아 게임이 종료되었습니다. (통계 미반영)' };
     }
     return iWon ? { title: '승리', body: '상대가 떠났습니다.' } : { title: '패배', body: '게임 종료.' };
   }, [winner, winReason, myColorStr]);
@@ -320,6 +393,54 @@ export default function OnlineGameScreen({
           {roomCode}
         </span>
       </div>
+
+      {/* 끊김 띠 */}
+      {opponentDisconnected && !winner && (
+        <div style={{
+          padding: '10px 14px',
+          background: 'rgba(231, 76, 60, 0.15)',
+          border: '1px solid #e74c3c',
+          borderRadius: 4,
+          marginBottom: 12,
+          fontSize: 13,
+          color: 'var(--fg)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          maxWidth: 560, width: '100%',
+          flexWrap: 'wrap',
+        }}>
+          <span>⚠ {opponentLabelName}이 응답이 없습니다</span>
+          {!canTerminate ? (
+            <span style={{
+              marginLeft: 'auto',
+              fontFamily: 'JetBrains Mono, monospace',
+              fontSize: 12,
+              color: 'var(--fg-muted)',
+            }}>
+              {formatMMSS(opponentTimeoutSecondsLeft)} 후 게임 종료 가능
+            </span>
+          ) : (
+            <button
+              onClick={handleForceTerminate}
+              style={{
+                marginLeft: 'auto',
+                background: '#e74c3c',
+                color: '#fff',
+                border: 'none',
+                padding: '6px 14px',
+                borderRadius: 3,
+                fontSize: 12,
+                fontFamily: 'JetBrains Mono, monospace',
+                letterSpacing: '0.06em',
+                cursor: 'pointer',
+              }}
+            >
+              게임 종료하기
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="game-shell">
         {!winner && (
