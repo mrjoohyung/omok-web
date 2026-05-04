@@ -14,6 +14,7 @@ export default function GameScreen({ config, onExit, user, resumeState }) {
     aiLevel, aiStyle, userColor, practiceMode,
     blackLabel, whiteLabel, blackLabelName, whiteLabelName,
     pvpRecordable,
+    timeLimit = 0,
     exploitWeakness, dirWeights, weaknessStrength,
   } = config;
   const isAIMode = mode === 'pvc';
@@ -43,6 +44,36 @@ export default function GameScreen({ config, onExit, user, resumeState }) {
 
   const aiTimerRef = useRef(null);
   const lastMove = history.length > 0 ? history[history.length - 1] : null;
+
+  // === 시간 제한 (2인용만) ===
+  const [turnStartedAt, setTurnStartedAt] = useState(() => Date.now());
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    setTurnStartedAt(Date.now());
+  }, [turn]);
+
+  useEffect(() => {
+    if (!timeLimit || winner || isAIMode) return;
+    const interval = setInterval(() => setNow(Date.now()), 200);
+    return () => clearInterval(interval);
+  }, [timeLimit, winner, isAIMode]);
+
+  useEffect(() => {
+    if (!timeLimit || winner || isAIMode) return;
+    const elapsed = (now - turnStartedAt) / 1000;
+    if (elapsed >= timeLimit) {
+      setTurn(t => t === BLACK ? WHITE : BLACK);
+      setTurnStartedAt(Date.now());
+    }
+  }, [now, turnStartedAt, timeLimit, winner, isAIMode]);
+
+  const blackSecondsLeft = (timeLimit && !isAIMode && turn === BLACK)
+    ? Math.max(0, Math.ceil(timeLimit - (now - turnStartedAt) / 1000))
+    : null;
+  const whiteSecondsLeft = (timeLimit && !isAIMode && turn === WHITE)
+    ? Math.max(0, Math.ceil(timeLimit - (now - turnStartedAt) / 1000))
+    : null;
 
   // 자동 저장
   useEffect(() => {
@@ -82,7 +113,7 @@ export default function GameScreen({ config, onExit, user, resumeState }) {
           } else {
             record.blackLabel = blackLabel || 'anonymous';
             record.whiteLabel = whiteLabel || 'anonymous';
-            record.blackLabelName = blackLabelName || '익명';
+            record. = blackLabelName || '익명';
             record.whiteLabelName = whiteLabelName || '익명';
           }
           await saveGameResult(user, record);
@@ -343,6 +374,38 @@ export default function GameScreen({ config, onExit, user, resumeState }) {
           aiThinking={aiThinking}
           blackLabelName={blackLabelName} whiteLabelName={whiteLabelName}
         />
+        {timeLimit > 0 && !isAIMode && !winner && (
+          <div style={{
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            gap: 14,
+            padding: '8px 14px',
+            background: 'var(--panel)',
+            border: '1px solid var(--border)',
+            borderRadius: 4,
+            fontSize: 13,
+            fontFamily: 'JetBrains Mono, monospace',
+            margin: '8px auto 0',
+            maxWidth: 420,
+          }}>
+            <span style={{
+              color: turn === BLACK ? 'var(--fg)' : 'var(--fg-muted)',
+              fontWeight: turn === BLACK ? 600 : 400,
+              ...(turn === BLACK && blackSecondsLeft !== null && blackSecondsLeft <= 5 ? { color: '#e74c3c' } : {}),
+            }}>
+              ⚫ 흑: {turn === BLACK ? `${blackSecondsLeft}s` : `${timeLimit}s`}
+            </span>
+            <span style={{ color: 'var(--fg-muted)' }}>·</span>
+            <span style={{
+              color: turn === WHITE ? 'var(--fg)' : 'var(--fg-muted)',
+              fontWeight: turn === WHITE ? 600 : 400,
+              ...(turn === WHITE && whiteSecondsLeft !== null && whiteSecondsLeft <= 5 ? { color: '#e74c3c' } : {}),
+            }}>
+              ⚪ 백: {turn === WHITE ? `${whiteSecondsLeft}s` : `${timeLimit}s`}
+            </span>
+          </div>
+        )}
         <div className="board-wrap">
           <Board
             board={board} size={boardSize} lastMove={lastMove} winningLine={winningLine}
