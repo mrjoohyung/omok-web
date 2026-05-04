@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Board from './Board.jsx';
+import ChatPanel from './ChatPanel.jsx';
 import {
   EMPTY, BLACK, WHITE, createBoard, checkWin, isBoardFull, isForbidden, coordLabel,
 } from '../game/gameLogic.js';
@@ -53,6 +54,7 @@ export default function OnlineGameScreen({
   // 결과가 났을 때 본인 계정 통계에 저장 (한 번만)
   // 단, winReason === 'timeout' 인 경우 (끊김으로 인한 종료) 통계 미반영
   const [statsSaved, setStatsSaved] = useState(false);
+  const [chatExpanded, setChatExpanded] = useState(false);
   useEffect(() => {
     if (!winner) return;
     if (statsSaved) return;
@@ -486,6 +488,19 @@ export default function OnlineGameScreen({
         </div>
       </div>
 
+      <div className="online-chat-wrap">
+        <ChatPanel
+          roomCode={roomCode}
+          user={user}
+          opponentLabelName={opponentLabelName}
+          chatEnabled={!!config.chatEnabled}
+          emojiEnabled={!!config.emojiEnabled}
+          expanded={chatExpanded}
+          onToggleExpand={() => setChatExpanded(v => !v)}
+        />
+      </div>
+
+      {/* 무르기 모달들 */}
       {undoRequest && undoRequest.byUid === user.uid && (
         <div className="modal-backdrop">
           <div className="modal">
