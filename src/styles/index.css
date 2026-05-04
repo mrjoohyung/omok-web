@@ -477,3 +477,27 @@ body {
     height: 280px;
   }
 }
+/* === 5-E2 fix: 모바일 시간 표시 === */
+.move-time-display {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 14px;
+  font-family: 'JetBrains Mono', monospace;
+  margin: 8px auto 0;
+  max-width: 420px;
+  width: 100%;
+  box-sizing: border-box;
+}
+@media (max-width: 600px) {
+  .move-time-display {
+    font-size: 15px;
+    padding: 12px 16px;
+    max-width: 100%;
+  }
+}
