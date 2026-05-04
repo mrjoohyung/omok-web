@@ -91,7 +91,9 @@ export default function StartScreen({
     } else {
       config.aiLevel = aiLevel;
       config.aiStyle = aiStyle;
-      config.userColor = userColor;
+      config.userColor = userColor === 'random'
+        ? (Math.random() < 0.5 ? 'black' : 'white')
+        : userColor;
       config.practiceMode = practiceMode;
       config.undoLimit = practiceMode ? -1 : 1;
       config.hintEnabled = true;
@@ -441,6 +443,7 @@ export default function StartScreen({
             <div className="choice-group">
               <button className={`choice-btn ${userColor === 'black' ? 'active' : ''}`} onClick={() => setUserColor('black')}>흑 (선공)</button>
               <button className={`choice-btn ${userColor === 'white' ? 'active' : ''}`} onClick={() => setUserColor('white')}>백 (후공)</button>
+              <button className={`choice-btn ${userColor === 'random' ? 'active' : ''}`} onClick={() => setUserColor('random')}>무작위</button>
             </div>
           </div>
           {practiceMode && (
@@ -457,8 +460,28 @@ export default function StartScreen({
 
       <button className="primary-btn" onClick={handleStart} style={{ marginTop: 8 }}>대국 시작</button>
 
-      <button className="secondary-btn" onClick={onOpenOnline} style={{ marginTop: 12, width: '100%' }}>
-        🌐 온라인 대국 (다른 기기와 실시간 연결)
+      <button
+        className="primary-btn"
+        onClick={onOpenOnline}
+        style={{
+          marginTop: 12,
+          width: '100%',
+          padding: '20px 16px',
+          fontSize: 16,
+          background: 'var(--bg-2)',
+          border: '2px solid var(--accent)',
+          color: 'var(--fg)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 6,
+        }}
+      >
+        <span style={{ fontSize: 28 }}>🌐</span>
+        <span style={{ fontSize: 15, fontWeight: 600 }}>온라인 대국</span>
+        <span style={{ fontSize: 11, color: 'var(--fg-muted)', fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.06em' }}>
+          다른 기기와 실시간 연결
+        </span>
       </button>
 
       <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
