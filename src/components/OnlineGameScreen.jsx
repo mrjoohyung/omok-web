@@ -8,6 +8,7 @@ import {
   makeMove, endGame, resignGame, leaveRoom,
   requestReplay, acceptReplay, declineReplay,
   updateHeartbeat, forceTerminate, timeoutDraw,
+  passTurnOnTimeout,
 } from '../firebase/online.js';
 import { saveGameResult } from '../firebase/store.js';
 import { ref, update, onValue, off } from 'firebase/database';
@@ -222,6 +223,7 @@ export default function OnlineGameScreen({
     await update(ref(rtdb, `rooms/${roomCode}`), {
       moves: newMoves,
       turn: undoRequest.byColor,
+      turnStartedAt: Date.now(),
       undoRequest: null,
     });
   };
@@ -334,6 +336,31 @@ export default function OnlineGameScreen({
     const s = totalSec % 60;
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
+  const formatMMSS = (totalSec) => {
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  // ===== 한 수 시간 제한 (5-E2) =====
+  const moveTimeLimit = config.timeLimit || 0;
+  const turnStartedAt = roomData.turnStartedAt || 0;
+  const turnElapsedMs = turnStartedAt ? (now - turnStartedAt) : 0;
+  const turnSecondsLeft = moveTimeLimit > 0
+    ? Math.max(0, Math.ceil(moveTimeLimit - turnElapsedMs / 1000))
+    : null;
+
+  useEffect(() => {
+    if (!moveTimeLimit) return;
+    if (winner) return;
+    if (!turnStartedAt) return;
+    if (turnElapsedMs / 1000 < moveTimeLimit) return;
+    passTurnOnTimeout({
+      roomCode,
+      expectedTurn: turnStr,
+      expectedTurnStartedAt: turnStartedAt,
+    }).catch(() => {});
+  }, [moveTimeLimit, winner, turnStartedAt, turnElapsedMs, roomCode, turnStr]);
 
  // ===== 결과 메시지 =====
   const resultMessage = useMemo(() => {
@@ -458,6 +485,37 @@ export default function OnlineGameScreen({
               {winner === 'draw' ? '무승부' : (winner === myColorStr ? '내가 이김' : `${opponentLabelName}이 이김`)}
             </span>
             <span className="winner-tag">winner</span>
+          </div>
+        )}
+        {moveTimeLimit > 0 && !winner && turnSecondsLeft !== null && (
+          <div style={{
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            gap: 14,
+            padding: '8px 14px',
+            background: 'var(--panel)',
+            border: '1px solid var(--border)',
+            borderRadius: 4,
+            fontSize: 13,
+            fontFamily: 'JetBrains Mono, monospace',
+            margin: '8px auto 0',
+            maxWidth: 420,
+          }}>
+            <span style={{
+              color: isMyTurn ? 'var(--fg)' : 'var(--fg-muted)',
+              fontWeight: isMyTurn ? 600 : 400,
+              ...(isMyTurn && turnSecondsLeft <= 5 ? { color: '#e74c3c' } : {}),
+            }}>
+              내 시간: {isMyTurn ? `${turnSecondsLeft}s` : `${moveTimeLimit}s`}
+            </span>
+            <span style={{ color: 'var(--fg-muted)' }}>·</span>
+            <span style={{
+              color: !isMyTurn ? 'var(--fg)' : 'var(--fg-muted)',
+              fontWeight: !isMyTurn ? 600 : 400,
+            }}>
+              상대 시간: {!isMyTurn ? `${turnSecondsLeft}s` : `${moveTimeLimit}s`}
+            </span>
           </div>
         )}
 
