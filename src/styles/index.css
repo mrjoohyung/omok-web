@@ -349,6 +349,8 @@ body {
 }
 .board-svg {
   display: block;
+  max-width: 100%;
+  height: auto;
 }
 
 .board-cell-hit {
@@ -508,5 +510,24 @@ body {
   }
   .board-wrap {
     max-width: 720px;
+  }
+  .game-shell {
+    max-width: 720px;
+  }
+  .app-shell {
+    padding: 40px 24px;
+  }
+}
+
+/* === 큰 태블릿 / 작은 데스크톱 (1024px 이상) === */
+@media (min-width: 1024px) {
+  .panel {
+    max-width: 800px;
+  }
+  .board-wrap {
+    max-width: 800px;
+  }
+  .game-shell {
+    max-width: 900px;
   }
 }
