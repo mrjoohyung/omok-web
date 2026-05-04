@@ -4,6 +4,7 @@ import ChatPanel from './ChatPanel.jsx';
 import {
   EMPTY, BLACK, WHITE, createBoard, checkWin, isBoardFull, isForbidden, coordLabel,
 } from '../game/gameLogic.js';
+import { evaluateBoard } from '../game/ai.js';
 import {
   makeMove, endGame, resignGame, leaveRoom,
   requestReplay, acceptReplay, declineReplay,
@@ -56,6 +57,30 @@ export default function OnlineGameScreen({
   // 단, winReason === 'timeout' 인 경우 (끊김으로 인한 종료) 통계 미반영
   const [statsSaved, setStatsSaved] = useState(false);
   const [chatExpanded, setChatExpanded] = useState(false);
+  const [evalSeries, setEvalSeries] = useState([]);
+  const [showEvalGraph, setShowEvalGraph] = useState(false);
+
+  // 매 수마다 보드 평가 (실시간, 흑 입장)
+  useEffect(() => {
+    if (moves.length === 0) {
+      setEvalSeries([]);
+      return;
+    }
+    const tempBoard = createBoard(boardSize);
+    for (const m of moves) {
+      tempBoard[m.y][m.x] = m.color === 'black' ? BLACK : WHITE;
+    }
+    try {
+      const score = evaluateBoard(tempBoard, BLACK, 'balanced', { allowOverline });
+      const normalized = Math.tanh(score / 5000);
+      setEvalSeries(prev => {
+        const trimmed = prev.slice(0, moves.length - 1);
+        return [...trimmed, normalized];
+      });
+    } catch (e) {
+      setEvalSeries(prev => [...prev.slice(0, moves.length - 1), 0]);
+    }
+  }, [moves.length, boardSize, allowOverline]);
 
   const [showJoinToast, setShowJoinToast] = useState(false);
   const [showConditionInfo, setShowConditionInfo] = useState(false);
@@ -568,11 +593,66 @@ export default function OnlineGameScreen({
             ↶ 무르기 요청
           </button>
           <button className="secondary-btn" onClick={handleResign} disabled={!!winner}>⚑ 항복</button>
+          <button className="secondary-btn" onClick={() => setShowEvalGraph(v => !v)}>
+            {showEvalGraph ? '📊' : '📈'} 승률 그래프
+          </button>
           <span className="meta">
             수 {moves.length}{lastMove && ` · ${coordLabel(lastMove.x, lastMove.y, boardSize)}`}
           </span>
           <button className="secondary-btn" onClick={handleExit}>✕ 나가기</button>
         </div>
+
+        {showEvalGraph && (
+          <div style={{
+            marginTop: 10,
+            padding: '12px 14px',
+            background: 'var(--panel)',
+            border: '1px solid var(--border)',
+            borderRadius: 4,
+            maxWidth: 640,
+            width: '100%',
+            boxSizing: 'border-box',
+          }}>
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              fontSize: 11, color: 'var(--fg-muted)',
+              fontFamily: 'JetBrains Mono, monospace', marginBottom: 6,
+            }}>
+              <span>승률 그래프 (흑 입장)</span>
+              <span>{evalSeries.length}수</span>
+            </div>
+            {evalSeries.length < 2 ? (
+              <p style={{ fontSize: 12, color: 'var(--fg-muted)', textAlign: 'center', padding: '12px 0' }}>
+                두 수 이상 두면 그래프가 그려집니다.
+              </p>
+            ) : (
+              <>
+                <svg viewBox="0 0 300 80" width="100%" height="80" preserveAspectRatio="none" style={{ background: 'var(--bg-2)', borderRadius: 3 }}>
+                  <line x1="0" y1="40" x2="300" y2="40" stroke="var(--border)" strokeWidth="1" strokeDasharray="2 2"/>
+                  <polyline
+                    fill="none"
+                    stroke="var(--accent)"
+                    strokeWidth="2"
+                    points={evalSeries.map((v, i) => {
+                      const x = (i / Math.max(evalSeries.length - 1, 1)) * 300;
+                      const y = 40 - v * 40;
+                      return `${x},${y}`;
+                    }).join(' ')}
+                  />
+                </svg>
+                <div style={{
+                  display: 'flex', justifyContent: 'space-between',
+                  fontSize: 10, color: 'var(--fg-muted)',
+                  fontFamily: 'JetBrains Mono, monospace', marginTop: 4,
+                }}>
+                  <span>↑ 흑 우세</span>
+                  <span>균형</span>
+                  <span>↓ 백 우세</span>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="online-chat-wrap">
