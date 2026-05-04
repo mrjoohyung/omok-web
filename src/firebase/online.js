@@ -180,9 +180,26 @@ export async function declineReplay({ roomCode }) {
   });
 }
 
+// ===== 방 떠나기 / 폐기 =====
+// 게임 진행 중이면 떠나는 사람의 상대를 승리로 처리
 export async function leaveRoom({ roomCode, role }) {
   const roomRef = ref(rtdb, `rooms/${roomCode}`);
-  await update(roomRef, { status: 'abandoned' });
+  await runTransaction(roomRef, (data) => {
+    if (!data) return data;
+    if (data.status === 'playing') {
+      const leaverColor = role === 'host'
+        ? data.hostColor
+        : (data.hostColor === 'black' ? 'white' : 'black');
+      const winnerColor = leaverColor === 'black' ? 'white' : 'black';
+      data.status = 'finished';
+      data.winner = winnerColor;
+      data.winReason = 'leave';
+      data.winningLine = null;
+    } else if (data.status === 'waiting') {
+      data.status = 'abandoned';
+    }
+    return data;
+  });
 }
 
 export async function forceTerminate({ roomCode, byColor }) {
