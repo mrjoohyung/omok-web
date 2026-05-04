@@ -5,7 +5,7 @@ import {
   isForbidden, findThreatCells, coordLabel, summarizeMove,
 } from '../game/gameLogic.js';
 import { getHint } from '../game/hint.js';
-import { chooseAIMove } from '../game/ai.js';
+import { chooseAIMove, evaluateBoard } from '../game/ai.js';
 import { saveCurrentGame, clearCurrentGame, saveGameResult } from '../firebase/store.js';
 
 export default function GameScreen({ config, onExit, user, resumeState }) {
@@ -41,6 +41,34 @@ export default function GameScreen({ config, onExit, user, resumeState }) {
   const [aiThinking, setAiThinking] = useState(false);
   const [overlinePending, setOverlinePending] = useState(null);
   const [resultSaved, setResultSaved] = useState(false);
+  const [modalDismissed, setModalDismissed] = useState(false);
+  const [evalSeries, setEvalSeries] = useState(null);
+  useEffect(() => { if (winner) setModalDismissed(false); }, [winner]);
+
+  // 게임 종료 시 매 수마다 보드 평가하여 승률 그래프 생성 (AI 모드만)
+  useEffect(() => {
+    if (!winner) return;
+    if (!isAIMode) return;
+    if (evalSeries) return;
+    if (history.length < 2) return;
+
+    const series = [];
+    const tempBoard = createBoard(boardSize);
+    const userVal = userColor === 'white' ? WHITE : BLACK;
+
+    for (let i = 0; i < history.length; i++) {
+      const m = history[i];
+      tempBoard[m.y][m.x] = m.color;
+      try {
+        const score = evaluateBoard(tempBoard, userVal, 'balanced', { allowOverline });
+        const normalized = Math.tanh(score / 5000);
+        series.push(normalized);
+      } catch (e) {
+        series.push(0);
+      }
+    }
+    setEvalSeries(series);
+  }, [winner, isAIMode, history, boardSize, userColor, allowOverline, evalSeries]);
 
   const aiTimerRef = useRef(null);
   const lastMove = history.length > 0 ? history[history.length - 1] : null;
@@ -443,18 +471,71 @@ export default function GameScreen({ config, onExit, user, resumeState }) {
         </div>
       )}
 
-      {winner && resultMessage && (
-        <div className="modal-backdrop">
-          <div className="modal">
+      {winner && resultMessage && !modalDismissed && (
+        <div className="modal-backdrop" onClick={() => setModalDismissed(true)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ position: 'relative' }}>
+            <button
+              onClick={() => setModalDismissed(true)}
+              style={{
+                position: 'absolute', top: 8, right: 12,
+                background: 'transparent', border: 'none',
+                color: 'var(--fg-muted)', fontSize: 20,
+                cursor: 'pointer', padding: '4px 8px',
+                lineHeight: 1,
+              }}
+              title="보드 보기"
+            >
+              ×
+            </button>
             <h3>{resultMessage.title}</h3>
             <p>{resultMessage.body}</p>
             <p style={{ fontSize: 12, color: 'var(--fg-muted)', fontFamily: 'JetBrains Mono, monospace' }}>총 {history.length}수</p>
+            {isAIMode && evalSeries && evalSeries.length > 1 && (
+              <div style={{ marginTop: 12, marginBottom: 4 }}>
+                <div style={{ fontSize: 11, color: 'var(--fg-muted)', fontFamily: 'JetBrains Mono, monospace', marginBottom: 4 }}>
+                  승률 그래프 (수별 우세)
+                </div>
+                <svg viewBox="0 0 300 80" width="100%" height="80" preserveAspectRatio="none" style={{ background: 'var(--bg-2)', borderRadius: 3 }}>
+                  <line x1="0" y1="40" x2="300" y2="40" stroke="var(--border)" strokeWidth="1" strokeDasharray="2 2"/>
+                  <polyline
+                    fill="none"
+                    stroke="var(--accent)"
+                    strokeWidth="2"
+                    points={evalSeries.map((v, i) => {
+                      const x = (i / (evalSeries.length - 1)) * 300;
+                      const y = 40 - v * 40;
+                      return `${x},${y}`;
+                    }).join(' ')}
+                  />
+                </svg>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--fg-muted)', fontFamily: 'JetBrains Mono, monospace', marginTop: 2 }}>
+                  <span>내 우세 ↑</span>
+                  <span>균형</span>
+                  <span>AI 우세 ↓</span>
+                </div>
+              </div>
+            )}
             <div className="modal-actions">
               <button className="secondary-btn" onClick={onExit}>메뉴로</button>
               <button className="primary-btn" onClick={handleReplay}>다시 두기</button>
             </div>
           </div>
         </div>
+      )}
+      {winner && modalDismissed && (
+        <button
+          onClick={() => setModalDismissed(false)}
+          style={{
+            position: 'fixed', bottom: 20, right: 20,
+            background: 'var(--accent)', color: 'var(--bg)',
+            padding: '10px 16px', borderRadius: 4, fontSize: 13,
+            fontFamily: 'JetBrains Mono, monospace',
+            border: 'none', cursor: 'pointer',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.3)', zIndex: 50,
+          }}
+        >
+          📋 결과 보기
+        </button>
       )}
     </div>
   );
