@@ -375,20 +375,7 @@ export default function GameScreen({ config, onExit, user, resumeState }) {
           blackLabelName={blackLabelName} whiteLabelName={whiteLabelName}
         />
         {timeLimit > 0 && !isAIMode && !winner && (
-          <div style={{
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            gap: 14,
-            padding: '8px 14px',
-            background: 'var(--panel)',
-            border: '1px solid var(--border)',
-            borderRadius: 4,
-            fontSize: 13,
-            fontFamily: 'JetBrains Mono, monospace',
-            margin: '8px auto 0',
-            maxWidth: 420,
-          }}>
+          <div className="move-time-display">
             <span style={{
               color: turn === BLACK ? 'var(--fg)' : 'var(--fg-muted)',
               fontWeight: turn === BLACK ? 600 : 400,
