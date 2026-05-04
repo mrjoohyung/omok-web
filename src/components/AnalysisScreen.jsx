@@ -78,11 +78,14 @@ export default function AnalysisScreen({ user, onBack, onAccountDeleted }) {
     );
   }
 
-  const aiTotal = (stats?.ai?.asBlack?.total || 0) + (stats?.ai?.asWhite?.total || 0);
-  const aiWins = (stats?.ai?.asBlack?.wins || 0) + (stats?.ai?.asWhite?.wins || 0);
-  const aiLosses = (stats?.ai?.asBlack?.losses || 0) + (stats?.ai?.asWhite?.losses || 0);
-  const aiDraws = (stats?.ai?.asBlack?.draws || 0) + (stats?.ai?.asWhite?.draws || 0);
-  const pvpTotal = stats?.pvp?.total || 0;
+  // stats가 stale일 수 있으니 게임 기록에서 직접 계산
+  const aiGames = allGamesForChart.filter(g => g.mode === 'pvc');
+  const pvpGames = allGamesForChart.filter(g => g.mode === 'pvp');
+  const aiTotal = aiGames.length;
+  const aiWins = aiGames.filter(g => g.userWon === true).length;
+  const aiLosses = aiGames.filter(g => g.userWon === false && g.winner !== 'draw').length;
+  const aiDraws = aiGames.filter(g => g.winner === 'draw').length;
+  const pvpTotal = pvpGames.length;
   const grandTotal = aiTotal + pvpTotal;
 
  const strengthAnalysis = computeStrengths(allGamesForChart, stats?.ai, aiByLevel);
