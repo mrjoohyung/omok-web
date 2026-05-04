@@ -174,4 +174,18 @@ export async function forceTerminate({ roomCode, byColor }) {
 // 양쪽 다 끊김 → 무승부 처리
 export async function timeoutDraw({ roomCode }) {
   await endGame({ roomCode, winner: 'draw', winReason: 'timeout', winningLine: null });
+}// =======================================================================
+// 5-E1: 채팅 / 이모티콘
+// =======================================================================
+
+export async function sendChatMessage({ roomCode, senderUid, kind, content }) {
+  const trimmed = (content || '').toString().slice(0, 100);
+  if (!trimmed) return;
+  const chatRef = ref(rtdb, `rooms/${roomCode}/chat`);
+  await push(chatRef, {
+    senderUid,
+    kind,
+    content: trimmed,
+    ts: Date.now(),
+  });
 }
