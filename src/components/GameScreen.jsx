@@ -113,7 +113,7 @@ export default function GameScreen({ config, onExit, user, resumeState }) {
           } else {
             record.blackLabel = blackLabel || 'anonymous';
             record.whiteLabel = whiteLabel || 'anonymous';
-            record. = blackLabelName || '익명';
+            record.blackLabelName = blackLabelName || '익명';
             record.whiteLabelName = whiteLabelName || '익명';
           }
           await saveGameResult(user, record);
