@@ -42,33 +42,32 @@ export default function GameScreen({ config, onExit, user, resumeState }) {
   const [overlinePending, setOverlinePending] = useState(null);
   const [resultSaved, setResultSaved] = useState(false);
   const [modalDismissed, setModalDismissed] = useState(false);
-  const [evalSeries, setEvalSeries] = useState(null);
+  const [evalSeries, setEvalSeries] = useState([]);
+  const [showEvalGraph, setShowEvalGraph] = useState(false);
+  // 승리 시 모달 다시 띄우기 위해 winner 변경 시 reset
   useEffect(() => { if (winner) setModalDismissed(false); }, [winner]);
 
-  // 게임 종료 시 매 수마다 보드 평가하여 승률 그래프 생성 (AI 모드만)
+  // 매 수마다 보드 평가 (실시간, 모든 모드, 흑 입장)
   useEffect(() => {
-    if (!winner) return;
-    if (!isAIMode) return;
-    if (evalSeries) return;
-    if (history.length < 2) return;
-
-    const series = [];
-    const tempBoard = createBoard(boardSize);
-    const userVal = userColor === 'white' ? WHITE : BLACK;
-
-    for (let i = 0; i < history.length; i++) {
-      const m = history[i];
-      tempBoard[m.y][m.x] = m.color;
-      try {
-        const score = evaluateBoard(tempBoard, userVal, 'balanced', { allowOverline });
-        const normalized = Math.tanh(score / 5000);
-        series.push(normalized);
-      } catch (e) {
-        series.push(0);
-      }
+    if (history.length === 0) {
+      setEvalSeries([]);
+      return;
     }
-    setEvalSeries(series);
-  }, [winner, isAIMode, history, boardSize, userColor, allowOverline, evalSeries]);
+    const tempBoard = createBoard(boardSize);
+    for (const m of history) {
+      tempBoard[m.y][m.x] = m.color;
+    }
+    try {
+      const score = evaluateBoard(tempBoard, BLACK, 'balanced', { allowOverline });
+      const normalized = Math.tanh(score / 5000);
+      setEvalSeries(prev => {
+        const trimmed = prev.slice(0, history.length - 1);
+        return [...trimmed, normalized];
+      });
+    } catch (e) {
+      setEvalSeries(prev => [...prev.slice(0, history.length - 1), 0]);
+    }
+  }, [history.length, boardSize, allowOverline]);
 
   const aiTimerRef = useRef(null);
   const lastMove = history.length > 0 ? history[history.length - 1] : null;
@@ -444,12 +443,67 @@ export default function GameScreen({ config, onExit, user, resumeState }) {
               {threatVisible ? '◉' : '○'} 위협 마커
             </button>
           )}
+          <button className="secondary-btn" onClick={() => setShowEvalGraph(v => !v)}>
+            {showEvalGraph ? '📊' : '📈'} 승률 그래프
+          </button>
           <span className="meta">
             수 {history.length}{lastMove && ` · ${coordLabel(lastMove.x, lastMove.y, boardSize)}`}
             {isAIMode && ` · Lv${aiLevel}/${aiStyle === 'attack' ? '공격' : aiStyle === 'defense' ? '방어' : '균형'}/${practiceMode ? '연습' : '실전'}`}
           </span>
           <button className="secondary-btn" onClick={handleNewGame}>✕ 메뉴로</button>
         </div>
+
+        {showEvalGraph && (
+          <div style={{
+            marginTop: 10,
+            padding: '12px 14px',
+            background: 'var(--panel)',
+            border: '1px solid var(--border)',
+            borderRadius: 4,
+            maxWidth: 640,
+            width: '100%',
+            boxSizing: 'border-box',
+          }}>
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              fontSize: 11, color: 'var(--fg-muted)',
+              fontFamily: 'JetBrains Mono, monospace', marginBottom: 6,
+            }}>
+              <span>승률 그래프 (흑 입장)</span>
+              <span>{evalSeries.length}수</span>
+            </div>
+            {evalSeries.length < 2 ? (
+              <p style={{ fontSize: 12, color: 'var(--fg-muted)', textAlign: 'center', padding: '12px 0' }}>
+                두 수 이상 두면 그래프가 그려집니다.
+              </p>
+            ) : (
+              <>
+                <svg viewBox="0 0 300 80" width="100%" height="80" preserveAspectRatio="none" style={{ background: 'var(--bg-2)', borderRadius: 3 }}>
+                  <line x1="0" y1="40" x2="300" y2="40" stroke="var(--border)" strokeWidth="1" strokeDasharray="2 2"/>
+                  <polyline
+                    fill="none"
+                    stroke="var(--accent)"
+                    strokeWidth="2"
+                    points={evalSeries.map((v, i) => {
+                      const x = (i / Math.max(evalSeries.length - 1, 1)) * 300;
+                      const y = 40 - v * 40;
+                      return `${x},${y}`;
+                    }).join(' ')}
+                  />
+                </svg>
+                <div style={{
+                  display: 'flex', justifyContent: 'space-between',
+                  fontSize: 10, color: 'var(--fg-muted)',
+                  fontFamily: 'JetBrains Mono, monospace', marginTop: 4,
+                }}>
+                  <span>↑ 흑 우세</span>
+                  <span>균형</span>
+                  <span>↓ 백 우세</span>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {overlinePending && (
@@ -490,10 +544,10 @@ export default function GameScreen({ config, onExit, user, resumeState }) {
             <h3>{resultMessage.title}</h3>
             <p>{resultMessage.body}</p>
             <p style={{ fontSize: 12, color: 'var(--fg-muted)', fontFamily: 'JetBrains Mono, monospace' }}>총 {history.length}수</p>
-            {isAIMode && evalSeries && evalSeries.length > 1 && (
+            {evalSeries && evalSeries.length > 1 && (
               <div style={{ marginTop: 12, marginBottom: 4 }}>
                 <div style={{ fontSize: 11, color: 'var(--fg-muted)', fontFamily: 'JetBrains Mono, monospace', marginBottom: 4 }}>
-                  승률 그래프 (수별 우세)
+                  승률 그래프 (흑 입장)
                 </div>
                 <svg viewBox="0 0 300 80" width="100%" height="80" preserveAspectRatio="none" style={{ background: 'var(--bg-2)', borderRadius: 3 }}>
                   <line x1="0" y1="40" x2="300" y2="40" stroke="var(--border)" strokeWidth="1" strokeDasharray="2 2"/>
@@ -509,9 +563,9 @@ export default function GameScreen({ config, onExit, user, resumeState }) {
                   />
                 </svg>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--fg-muted)', fontFamily: 'JetBrains Mono, monospace', marginTop: 2 }}>
-                  <span>내 우세 ↑</span>
+                  <span>↑ 흑 우세</span>
                   <span>균형</span>
-                  <span>AI 우세 ↓</span>
+                  <span>↓ 백 우세</span>
                 </div>
               </div>
             )}
