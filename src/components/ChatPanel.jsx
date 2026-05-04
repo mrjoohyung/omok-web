@@ -79,6 +79,65 @@ export default function ChatPanel({
 
   if (!chatEnabled && !emojiEnabled) return null;
 
+  // 채팅 OFF + 이모티콘만 ON: 토글 없이 항상 보이는 단순 패널
+  if (!chatEnabled && emojiEnabled) {
+    return (
+      <div className="chat-panel" style={{ height: 'auto' }}>
+        <div style={{
+          padding: '6px 12px',
+          fontSize: 11,
+          color: 'var(--fg-muted)',
+          fontFamily: 'JetBrains Mono, monospace',
+          borderBottom: '1px solid var(--border)',
+        }}>
+          이모티콘
+        </div>
+        <div ref={scrollRef} className="chat-messages" style={{ maxHeight: 160 }}>
+          {messages.length === 0 ? (
+            <p style={{ fontSize: 12, color: 'var(--fg-muted)', textAlign: 'center', padding: '12px 8px' }}>
+              아직 이모티콘이 없습니다.
+            </p>
+          ) : (
+            messages.map(m => {
+              const isMe = m.senderUid === user.uid;
+              const senderLabel = isMe ? '나' : opponentLabelName;
+              return (
+                <div key={m.id} style={{ fontSize: 13, padding: '4px 0' }}>
+                  <span style={{
+                    fontFamily: 'JetBrains Mono, monospace',
+                    fontSize: 11,
+                    color: isMe ? 'var(--accent)' : 'var(--fg-muted)',
+                    marginRight: 6,
+                  }}>[{senderLabel}]</span>
+                  <span style={{ fontSize: 22 }}>{m.content}</span>
+                </div>
+              );
+            })
+          )}
+        </div>
+        <div style={{
+          display: 'flex', gap: 4, padding: '6px 8px',
+          borderTop: '1px solid var(--border)',
+        }}>
+          {EMOJIS.map(e => (
+            <button
+              key={e}
+              onClick={() => handleEmoji(e)}
+              style={{
+                flex: 1, fontSize: 18, padding: '6px 0',
+                background: 'var(--bg-2)', border: '1px solid var(--border)',
+                borderRadius: 3, cursor: 'pointer',
+              }}
+            >
+              {e}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // 안 펼침 상태 - 작은 토글 버튼만
   if (!expanded) {
     return (
       <button
