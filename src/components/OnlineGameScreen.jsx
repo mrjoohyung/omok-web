@@ -55,15 +55,18 @@ export default function OnlineGameScreen({
   // 결과가 났을 때 본인 계정 통계에 저장 (한 번만)
   // 단, winReason === 'timeout' 인 경우 (끊김으로 인한 종료) 통계 미반영
   const [statsSaved, setStatsSaved] = useState(false);
-const [chatExpanded, setChatExpanded] = useState(false);
+  const [chatExpanded, setChatExpanded] = useState(false);
 
-  // 호스트 첫 진입 (게스트 들어옴) 알림
   const [showJoinToast, setShowJoinToast] = useState(false);
+  const [showConditionInfo, setShowConditionInfo] = useState(false);
   useEffect(() => {
     if (role === 'host' && moves.length === 0) {
       setShowJoinToast(true);
       const t = setTimeout(() => setShowJoinToast(false), 4500);
       return () => clearTimeout(t);
+    }
+    if (role === 'guest' && moves.length === 0) {
+      setShowConditionInfo(true);
     }
   }, []);
   useEffect(() => {
@@ -728,6 +731,34 @@ const [chatExpanded, setChatExpanded] = useState(false);
           maxWidth: '90vw', textAlign: 'center',
         }}>
           🎉 {opponentLabelName}이 입장했습니다 — 게임 시작!
+        </div>
+      )}
+
+      {/* 게스트용 게임 조건 안내 모달 */}
+      {showConditionInfo && (
+        <div className="modal-backdrop" onClick={() => setShowConditionInfo(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <h3>게임 조건</h3>
+            <p style={{ fontSize: 13, color: 'var(--fg-muted)', marginBottom: 12 }}>
+              방을 만든 사람이 정한 조건입니다.
+            </p>
+            <div style={{
+              display: 'flex', flexDirection: 'column', gap: 8,
+              padding: 12, background: 'var(--bg-2)', borderRadius: 4,
+              fontSize: 13, lineHeight: 1.6,
+            }}>
+              <div><b>보드 크기:</b> {boardSize}×{boardSize}</div>
+              <div><b>렌주 금수:</b> {renju ? '적용 (흑 3-3 · 4-4 · 6목 금지)' : '없음 (자유 오목)'}</div>
+              <div><b>6목 인정:</b> {allowOverline && !renju ? '인정' : '5목만 승리'}</div>
+              <div><b>내 색:</b> {myColorStr === 'black' ? '흑 (선공)' : '백 (후공)'}</div>
+              <div><b>한 수 시간:</b> {moveTimeLimit > 0 ? `${moveTimeLimit}초` : '제한 없음'}</div>
+              <div><b>채팅:</b> {config.chatEnabled ? '사용' : '사용 안 함'}</div>
+              <div><b>이모티콘:</b> {config.emojiEnabled ? '사용' : '사용 안 함'}</div>
+            </div>
+            <div className="modal-actions">
+              <button className="primary-btn" onClick={() => setShowConditionInfo(false)}>확인 — 게임 시작</button>
+            </div>
+          </div>
         </div>
       )}
     </div>
