@@ -10,6 +10,9 @@ export default function OnlineLobby({ user, onBack, onRoomCreated, onRoomJoined 
   const [renju, setRenju] = useState(false);
   const [allowOverline, setAllowOverline] = useState(true);
   const [hostColor, setHostColor] = useState('black');
+  const [chatEnabled, setChatEnabled] = useState(false);
+  const [emojiEnabled, setEmojiEnabled] = useState(true);
+  const [timeLimit, setTimeLimit] = useState(0);
 
   const [joinCode, setJoinCode] = useState('');
 
@@ -25,7 +28,7 @@ export default function OnlineLobby({ user, onBack, onRoomCreated, onRoomJoined 
         hostUid: user.uid,
         hostName: user.displayName || '익명',
         hostColor: actualHostColor,
-        config: { boardSize, renju, allowOverline },
+        config: { boardSize, renju, allowOverline, chatEnabled, emojiEnabled, timeLimit },
       });
       onRoomCreated({ code, role: 'host', actualHostColor });
     } catch (e) {
@@ -137,6 +140,41 @@ export default function OnlineLobby({ user, onBack, onRoomCreated, onRoomJoined 
               <button className={`choice-btn ${hostColor === 'white' ? 'active' : ''}`} onClick={() => setHostColor('white')}>백 (후공)</button>
               <button className={`choice-btn ${hostColor === 'random' ? 'active' : ''}`} onClick={() => setHostColor('random')}>무작위</button>
             </div>
+          </div>
+        </div>
+
+        <div className="panel">
+          <h2>채팅 / 시간</h2>
+          <div className="option-row">
+            <div><label>채팅</label><div className="hint-text">텍스트 메시지 사용 여부</div></div>
+            <div className="choice-group">
+              <button className={`choice-btn ${chatEnabled ? 'active' : ''}`} onClick={() => setChatEnabled(true)}>사용</button>
+              <button className={`choice-btn ${!chatEnabled ? 'active' : ''}`} onClick={() => setChatEnabled(false)}>사용 안 함</button>
+            </div>
+          </div>
+          <div className="option-row">
+            <div><label>이모티콘</label><div className="hint-text">5가지 반응 이모티콘</div></div>
+            <div className="choice-group">
+              <button className={`choice-btn ${emojiEnabled ? 'active' : ''}`} onClick={() => setEmojiEnabled(true)}>사용</button>
+              <button className={`choice-btn ${!emojiEnabled ? 'active' : ''}`} onClick={() => setEmojiEnabled(false)}>사용 안 함</button>
+            </div>
+          </div>
+          <div className="option-row" style={{ borderBottom: 'none' }}>
+            <div><label>한 수 시간 제한</label><div className="hint-text">시간 초과 시 그 수는 못 둠 (자동 패배 X)</div></div>
+            <select
+              value={timeLimit}
+              onChange={(e) => setTimeLimit(parseInt(e.target.value, 10))}
+              style={{
+                padding: '6px 10px', fontSize: 13, borderRadius: 3,
+                background: 'var(--bg-2)', color: 'var(--fg)',
+                border: '1px solid var(--border)', fontFamily: 'inherit',
+              }}
+            >
+              <option value={0}>없음</option>
+              <option value={10}>10초</option>
+              <option value={20}>20초</option>
+              <option value={30}>30초</option>
+            </select>
           </div>
         </div>
 
