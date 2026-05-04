@@ -55,7 +55,17 @@ export default function OnlineGameScreen({
   // 결과가 났을 때 본인 계정 통계에 저장 (한 번만)
   // 단, winReason === 'timeout' 인 경우 (끊김으로 인한 종료) 통계 미반영
   const [statsSaved, setStatsSaved] = useState(false);
-  const [chatExpanded, setChatExpanded] = useState(false);
+const [chatExpanded, setChatExpanded] = useState(false);
+
+  // 호스트 첫 진입 (게스트 들어옴) 알림
+  const [showJoinToast, setShowJoinToast] = useState(false);
+  useEffect(() => {
+    if (role === 'host' && moves.length === 0) {
+      setShowJoinToast(true);
+      const t = setTimeout(() => setShowJoinToast(false), 4500);
+      return () => clearTimeout(t);
+    }
+  }, []);
   useEffect(() => {
     if (!winner) return;
     if (statsSaved) return;
@@ -252,17 +262,48 @@ export default function OnlineGameScreen({
     }
   }, [undoRequest, roomData.undoDeclinedAt]);
 
+  // ===== 다시 두기 =====
   const [replayRequested, setReplayRequested] = useState(false);
-  const requestReplayHandler = async () => {
+  const [showChangeConfigModal, setShowChangeConfigModal] = useState(false);
+  const [pendingHostColor, setPendingHostColor] = useState(roomData.hostColor || 'black');
+  const [pendingTimeLimit, setPendingTimeLimit] = useState(config.timeLimit || 0);
+
+  const requestReplayHandler = async (mode) => {
+    if (mode === 'change' && role === 'host') {
+      setPendingHostColor(roomData.hostColor || 'black');
+      setPendingTimeLimit(config.timeLimit || 0);
+      setShowChangeConfigModal(true);
+      return;
+    }
     setReplayRequested(true);
-    await requestReplay({ roomCode, byUid: user.uid });
+    await requestReplay({
+      roomCode, byUid: user.uid,
+      newConfig: null,
+    });
+  };
+
+  const confirmChangeReplay = async () => {
+    let actualHostColor = pendingHostColor;
+    if (pendingHostColor === 'random') {
+      actualHostColor = Math.random() < 0.5 ? 'black' : 'white';
+    }
+    setReplayRequested(true);
+    setShowChangeConfigModal(false);
+    await requestReplay({
+      roomCode, byUid: user.uid,
+      newConfig: {
+        hostColor: actualHostColor,
+        config: { ...config, timeLimit: pendingTimeLimit },
+      },
+    });
   };
 
   const acceptReplayHandler = async () => {
+    const replayConf = roomData.replayConfig;
     await acceptReplay({
       roomCode,
-      hostColor: roomData.hostColor,
-      config: roomData.config,
+      hostColor: replayConf?.hostColor || roomData.hostColor,
+      config: replayConf?.config || roomData.config,
     });
     setReplayRequested(false);
   };
@@ -382,9 +423,13 @@ export default function OnlineGameScreen({
         ? { title: '승리', body: '상대가 3분간 응답이 없어 게임이 종료되었습니다. (통계 미반영)' }
         : { title: '패배', body: '본인이 응답하지 않아 게임이 종료되었습니다. (통계 미반영)' };
     }
+    if (winReason === 'leave') {
+      return iWon
+        ? { title: '승리', body: '상대가 방을 떠났습니다.' }
+        : { title: '패배', body: '본인이 방을 떠났습니다.' };
+    }
     return iWon ? { title: '승리', body: '상대가 떠났습니다.' } : { title: '패배', body: '게임 종료.' };
   }, [winner, winReason, myColorStr]);
-
   const turnLabel = useMemo(() => {
     if (winner) return null;
     if (isMyTurn) return `내 차례 (${myColorStr === 'black' ? '흑' : '백'})`;
@@ -483,20 +528,7 @@ export default function OnlineGameScreen({
           </div>
         )}
         {moveTimeLimit > 0 && !winner && turnSecondsLeft !== null && (
-          <div style={{
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            gap: 14,
-            padding: '8px 14px',
-            background: 'var(--panel)',
-            border: '1px solid var(--border)',
-            borderRadius: 4,
-            fontSize: 13,
-            fontFamily: 'JetBrains Mono, monospace',
-            margin: '8px auto 0',
-            maxWidth: 420,
-          }}>
+          <div className="move-time-display">
             <span style={{
               color: isMyTurn ? 'var(--fg)' : 'var(--fg-muted)',
               fontWeight: isMyTurn ? 600 : 400,
@@ -513,7 +545,6 @@ export default function OnlineGameScreen({
             </span>
           </div>
         )}
-
         <div className="board-wrap">
           <Board
             board={board}
@@ -595,6 +626,7 @@ export default function OnlineGameScreen({
         </div>
       )}
 
+      {/* 게임 결과 모달 */}
       {winner && resultMessage && !roomData.replayRequest && !replayRequested && (
         <div className="modal-backdrop">
           <div className="modal">
@@ -603,7 +635,54 @@ export default function OnlineGameScreen({
             <p style={{ fontSize: 12, color: 'var(--fg-muted)', fontFamily: 'JetBrains Mono, monospace' }}>총 {moves.length}수</p>
             <div className="modal-actions">
               <button className="secondary-btn" onClick={onExit}>나가기</button>
-              <button className="primary-btn" onClick={requestReplayHandler}>다시 두기 요청</button>
+              <button className="primary-btn" onClick={() => requestReplayHandler('same')}>
+                {role === 'host' ? '같은 조건으로 다시' : '다시 두기 요청'}
+              </button>
+              {role === 'host' && (
+                <button className="primary-btn" onClick={() => requestReplayHandler('change')}>
+                  조건 바꿔서 다시
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showChangeConfigModal && (
+        <div className="modal-backdrop">
+          <div className="modal">
+            <h3>새 게임 설정</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
+              <div>
+                <div style={{ fontSize: 12, color: 'var(--fg-muted)', marginBottom: 4 }}>내 색</div>
+                <div className="choice-group">
+                  <button className={`choice-btn ${pendingHostColor === 'black' ? 'active' : ''}`} onClick={() => setPendingHostColor('black')}>흑 (선공)</button>
+                  <button className={`choice-btn ${pendingHostColor === 'white' ? 'active' : ''}`} onClick={() => setPendingHostColor('white')}>백 (후공)</button>
+                  <button className={`choice-btn ${pendingHostColor === 'random' ? 'active' : ''}`} onClick={() => setPendingHostColor('random')}>무작위</button>
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: 'var(--fg-muted)', marginBottom: 4 }}>한 수 시간 제한</div>
+                <select
+                  value={pendingTimeLimit}
+                  onChange={(e) => setPendingTimeLimit(parseInt(e.target.value, 10))}
+                  style={{
+                    padding: '6px 10px', fontSize: 13, borderRadius: 3,
+                    background: 'var(--bg-2)', color: 'var(--fg)',
+                    border: '1px solid var(--border)', fontFamily: 'inherit',
+                    width: '100%',
+                  }}
+                >
+                  <option value={0}>없음</option>
+                  <option value={10}>10초</option>
+                  <option value={20}>20초</option>
+                  <option value={30}>30초</option>
+                </select>
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button className="secondary-btn" onClick={() => setShowChangeConfigModal(false)}>취소</button>
+              <button className="primary-btn" onClick={confirmChangeReplay}>이 설정으로 요청</button>
             </div>
           </div>
         </div>
@@ -625,12 +704,30 @@ export default function OnlineGameScreen({
         <div className="modal-backdrop">
           <div className="modal">
             <h3>{opponentLabelName}이 다시 두기를 요청했습니다</h3>
-            <p>같은 설정으로 한 번 더 두시겠어요?</p>
+            <p>
+              {roomData.replayConfig
+                ? `새 설정: ${roomData.replayConfig.hostColor === 'black' ? '상대 흑' : roomData.replayConfig.hostColor === 'white' ? '상대 백' : '무작위'}, 시간 ${roomData.replayConfig.config?.timeLimit ? roomData.replayConfig.config.timeLimit + '초' : '없음'}`
+                : '같은 설정으로 한 번 더 두시겠어요?'}
+            </p>
             <div className="modal-actions">
               <button className="secondary-btn" onClick={declineReplayHandler}>거절</button>
               <button className="primary-btn" onClick={acceptReplayHandler}>수락</button>
             </div>
           </div>
+        </div>
+      )}
+
+      {showJoinToast && (
+        <div style={{
+          position: 'fixed', bottom: 60, left: '50%', transform: 'translateX(-50%)',
+          background: 'var(--accent)', color: 'var(--bg)',
+          padding: '12px 20px', borderRadius: 4, fontSize: 14,
+          fontFamily: 'JetBrains Mono, monospace',
+          letterSpacing: '0.06em',
+          zIndex: 100, boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+          maxWidth: '90vw', textAlign: 'center',
+        }}>
+          🎉 {opponentLabelName}이 입장했습니다 — 게임 시작!
         </div>
       )}
     </div>
