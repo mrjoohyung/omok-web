@@ -23,8 +23,9 @@ export async function createRoom({ hostUid, hostName, hostColor, config }) {
       guestUid: null,
       guestName: null,
       config,
-      status: 'waiting',
+     status: 'waiting',
       turn: 'black',
+      turnStartedAt: null,
       moves: [],
       winner: null,
       winReason: null,
@@ -71,6 +72,7 @@ export async function joinRoom({ roomCode, guestUid, guestName }) {
     guestUid,
     guestName: guestName || '익명',
     status: 'playing',
+    turnStartedAt: Date.now(),
     lastActiveGuest: serverTimestamp(),
   };
   await update(roomRef, updates);
@@ -99,6 +101,7 @@ export async function makeMove({ roomCode, x, y, color, expectedTurn }) {
     data.moves = data.moves || [];
     data.moves.push({ x, y, color, ts: Date.now() });
     data.turn = color === 'black' ? 'white' : 'black';
+    data.turnStartedAt = Date.now();
     if (color === 'black') data.lastActiveHost = Date.now();
     else data.lastActiveGuest = Date.now();
     return data;
@@ -106,6 +109,20 @@ export async function makeMove({ roomCode, x, y, color, expectedTurn }) {
   return result.committed;
 }
 
+// ===== 시간 초과로 차례 넘김 =====
+export async function passTurnOnTimeout({ roomCode, expectedTurn, expectedTurnStartedAt }) {
+  const roomRef = ref(rtdb, `rooms/${roomCode}`);
+  const result = await runTransaction(roomRef, (data) => {
+    if (!data) return data;
+    if (data.status !== 'playing') return;
+    if (data.turn !== expectedTurn) return;
+    if (data.turnStartedAt !== expectedTurnStartedAt) return;
+    data.turn = expectedTurn === 'black' ? 'white' : 'black';
+    data.turnStartedAt = Date.now();
+    return data;
+  });
+  return result.committed;
+}
 export async function endGame({ roomCode, winner, winReason, winningLine }) {
   const roomRef = ref(rtdb, `rooms/${roomCode}`);
   await update(roomRef, {
@@ -140,6 +157,7 @@ export async function acceptReplay({ roomCode, hostColor, config }) {
   await update(roomRef, {
     status: 'playing',
     turn: 'black',
+    turnStartedAt: Date.now(),
     moves: [],
     winner: null,
     winReason: null,
