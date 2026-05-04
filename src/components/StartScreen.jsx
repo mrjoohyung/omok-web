@@ -13,6 +13,7 @@ export default function StartScreen({
   const [allowOverline, setAllowOverline] = useState(true);
 
   const [undoLimit, setUndoLimit] = useState(1);
+  const [timeLimit, setTimeLimit] = useState(0);
   const [hintEnabled, setHintEnabled] = useState(true);
   const [showThreatsPvp, setShowThreatsPvp] = useState(false);
   const [pvpRecordMode, setPvpRecordMode] = useState('guest');
@@ -75,10 +76,11 @@ export default function StartScreen({
   const labelMap = Object.fromEntries(labelOptions.map(o => [o.id, o.name]));
   const handleStart = () => {
     const config = { mode, boardSize, renju, allowOverline };
-    if (mode === 'pvp') {
+   if (mode === 'pvp') {
       config.undoLimit = undoLimit;
       config.hintEnabled = hintEnabled;
       config.showThreats = showThreatsPvp;
+      config.timeLimit = timeLimit;
       config.pvpRecordable = pvpRecordMode === 'tracked';
       if (pvpRecordMode === 'tracked') {
         config.blackLabel = blackLabel;
@@ -319,6 +321,23 @@ export default function StartScreen({
                 <button className={`choice-btn ${showThreatsPvp ? 'active' : ''}`} onClick={() => setShowThreatsPvp(true)}>표시</button>
                 <button className={`choice-btn ${!showThreatsPvp ? 'active' : ''}`} onClick={() => setShowThreatsPvp(false)}>숨김</button>
               </div>
+            </div>
+            <div className="option-row">
+              <div><label>한 수 시간 제한</label><div className="hint-text">시간 초과 시 그 수는 못 둠 (차례 넘김)</div></div>
+              <select
+                value={timeLimit}
+                onChange={(e) => setTimeLimit(parseInt(e.target.value, 10))}
+                style={{
+                  padding: '6px 10px', fontSize: 13, borderRadius: 3,
+                  background: 'var(--bg-2)', color: 'var(--fg)',
+                  border: '1px solid var(--border)', fontFamily: 'inherit',
+                }}
+              >
+                <option value={0}>없음</option>
+                <option value={10}>10초</option>
+                <option value={20}>20초</option>
+                <option value={30}>30초</option>
+              </select>
             </div>
           </div>
         </>
