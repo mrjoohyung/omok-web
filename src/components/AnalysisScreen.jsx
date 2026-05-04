@@ -78,7 +78,7 @@ export default function AnalysisScreen({ user, onBack, onAccountDeleted }) {
     );
   }
 
-  // stats가 stale일 수 있으니 게임 기록에서 직접 계산
+ // stats가 stale일 수 있으니 게임 기록에서 직접 계산
   const aiGames = allGamesForChart.filter(g => g.mode === 'pvc');
   const pvpGames = allGamesForChart.filter(g => g.mode === 'pvp');
   const aiTotal = aiGames.length;
@@ -88,7 +88,28 @@ export default function AnalysisScreen({ user, onBack, onAccountDeleted }) {
   const pvpTotal = pvpGames.length;
   const grandTotal = aiTotal + pvpTotal;
 
- const strengthAnalysis = computeStrengths(allGamesForChart, stats?.ai, aiByLevel);
+  // 단계별 AI 통계도 직접 계산 (aiByLevel 캐시 대체)
+  const aiByLevelComputed = (() => {
+    const out = {};
+    for (let lv = 1; lv <= 5; lv++) {
+      const lvGames = aiGames.filter(g => g.aiLevel === lv);
+      const slot = {
+        asBlack: { wins: 0, losses: 0, draws: 0, total: 0 },
+        asWhite: { wins: 0, losses: 0, draws: 0, total: 0 },
+      };
+      for (const g of lvGames) {
+        const colorKey = g.userColor === 'white' ? 'asWhite' : 'asBlack';
+        slot[colorKey].total++;
+        if (g.winner === 'draw') slot[colorKey].draws++;
+        else if (g.userWon) slot[colorKey].wins++;
+        else slot[colorKey].losses++;
+      }
+      out[lv] = slot;
+    }
+    return out;
+  })();
+
+  const strengthAnalysis = computeStrengths(allGamesForChart, { asBlack: aiGames.filter(g=>g.userColor!=='white').reduce((acc,g)=>{acc.total++;if(g.winner==='draw')acc.draws++;else if(g.userWon)acc.wins++;else acc.losses++;return acc;},{wins:0,losses:0,draws:0,total:0}), asWhite: aiGames.filter(g=>g.userColor==='white').reduce((acc,g)=>{acc.total++;if(g.winner==='draw')acc.draws++;else if(g.userWon)acc.wins++;else acc.losses++;return acc;},{wins:0,losses:0,draws:0,total:0}) }, aiByLevelComputed);
   const playerPattern = computePlayerPattern(allGamesForChart);
   const trendSeries = computeTrendSeries(allGamesForChart, 5);
   const recentChange = computeRecentChange(trendSeries, 5);
@@ -318,7 +339,7 @@ export default function AnalysisScreen({ user, onBack, onAccountDeleted }) {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {[1, 2, 3, 4, 5].map(lv => {
-              const slot = aiByLevel?.[lv] || { asBlack: {}, asWhite: {} };
+              const slot = aiByLevelComputed[lv] || { asBlack: {}, asWhite: {} };
               const b = slot.asBlack || {};
               const w = slot.asWhite || {};
               const total = (b.wins || 0) + (b.losses || 0) + (b.draws || 0)
