@@ -171,3 +171,7 @@ export async function forceTerminate({ roomCode, byColor }) {
   const winner = byColor;
   await endGame({ roomCode, winner, winReason: 'timeout', winningLine: null });
 }
+// 양쪽 다 끊김 → 무승부 처리
+export async function timeoutDraw({ roomCode }) {
+  await endGame({ roomCode, winner: 'draw', winReason: 'timeout', winningLine: null });
+}
