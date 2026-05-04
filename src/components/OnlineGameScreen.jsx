@@ -336,11 +336,6 @@ export default function OnlineGameScreen({
     const s = totalSec % 60;
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
-  const formatMMSS = (totalSec) => {
-    const m = Math.floor(totalSec / 60);
-    const s = totalSec % 60;
-    return `${m}:${s < 10 ? '0' : ''}${s}`;
-  };
 
   // ===== 한 수 시간 제한 (5-E2) =====
   const moveTimeLimit = config.timeLimit || 0;
