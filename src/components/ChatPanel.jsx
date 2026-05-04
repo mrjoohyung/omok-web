@@ -65,7 +65,11 @@ export default function ChatPanel({
 
   const handleEmoji = async (emoji) => {
     if (!emojiEnabled) return;
-    if (Date.now() - lastSentAt < MIN_INTERVAL_MS) return;
+    if (Date.now() - lastSentAt < MIN_INTERVAL_MS) {
+      setError('너무 빨리 보내셨어요.');
+      setTimeout(() => setError(null), 2000);
+      return;
+    }
     try {
       await sendChatMessage({
         roomCode,
@@ -74,7 +78,11 @@ export default function ChatPanel({
         content: emoji,
       });
       setLastSentAt(Date.now());
-    } catch (e) {}
+    } catch (e) {
+      console.error('이모티콘 전송 실패:', e);
+      setError('전송 실패: ' + (e.message || '알 수 없는 오류'));
+      setTimeout(() => setError(null), 4000);
+    }
   };
 
   if (!chatEnabled && !emojiEnabled) return null;
