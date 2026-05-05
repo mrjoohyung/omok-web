@@ -616,8 +616,45 @@ function findImmediateBlock(board, color, candidates, options) {
 function findUrgentDefense(board, color, opp, candidates, options) {
   let bestBlock = null;
   let bestPriority = 999;
+  const debugLog = [];
 
   for (const c of candidates) {
+    const oppBoard = cloneBoard(board);
+    oppBoard[c.y][c.x] = opp;
+    const oppSum = summarizeMove(oppBoard, c.x, c.y, opp);
+
+    let priority = 999;
+    if (oppSum.openFours >= 1) priority = 1;
+    else if (oppSum.openThrees >= 2) priority = 2;
+    else if (oppSum.fours >= 1) priority = 3;
+    else if (oppSum.openThrees >= 1) priority = 4;
+
+    if (priority < 999) {
+      debugLog.push({ x: c.x, y: c.y, prio: priority, sum: { ...oppSum } });
+    }
+
+    if (priority < bestPriority) {
+      const myBoard = cloneBoard(board);
+      myBoard[c.y][c.x] = color;
+      const mySum = summarizeMove(myBoard, c.x, c.y, color);
+      if ((options.allowOverline ? mySum.five : mySum.exactlyFive)
+          || mySum.openFours >= 1) {
+        bestPriority = priority;
+        bestBlock = c;
+        continue;
+      }
+      bestPriority = priority;
+      bestBlock = c;
+    }
+  }
+
+  if (debugLog.length > 0) {
+    console.log('[AI Urgent Defense] threats:', debugLog, 'chose:', bestBlock);
+  }
+
+  if (bestPriority >= 999) return null;
+  return bestBlock;
+}
     const oppBoard = cloneBoard(board);
     oppBoard[c.y][c.x] = opp;
     const oppSum = summarizeMove(oppBoard, c.x, c.y, opp);
