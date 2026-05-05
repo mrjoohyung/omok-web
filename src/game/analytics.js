@@ -320,15 +320,17 @@ export function computeLevelRecommendation(games, currentLevel, statsByLevel) {
   let suggestion = null;
   let reason = null;
 
-  if (rate >= 0.65 && currentLevel < 5) {
-    suggestion = currentLevel + 1;
+ if (rate >= 0.65 && currentLevel > 1) {
+    // 승률 높음 → 더 어려운 단계 (숫자 작은 쪽)
+    suggestion = currentLevel - 1;
     if (currentLevelRate !== null) {
       reason = `Lv${currentLevel}에서 승률 ${Math.round(rate * 100)}%로 안정적이에요. Lv${suggestion}도 도전해보세요!`;
     } else {
       reason = `최근 ${recent.length}판 승률 ${Math.round(rate * 100)}%로 좋아요. Lv${suggestion}도 도전해보세요!`;
     }
-  } else if (rate <= 0.30 && currentLevel > 1) {
-    suggestion = currentLevel - 1;
+  } else if (rate <= 0.30 && currentLevel < 5) {
+    // 승률 낮음 → 더 쉬운 단계 (숫자 큰 쪽)
+    suggestion = currentLevel + 1;
     if (currentLevelRate !== null) {
       reason = `Lv${currentLevel}이 좀 어려운 것 같아요. Lv${suggestion}부터 차근차근 어떨까요?`;
     } else {
