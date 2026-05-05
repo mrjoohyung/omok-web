@@ -616,7 +616,6 @@ function findImmediateBlock(board, color, candidates, options) {
 function findUrgentDefense(board, color, opp, candidates, options) {
   let bestBlock = null;
   let bestPriority = 999;
-  const debugLog = [];
 
   for (const c of candidates) {
     const oppBoard = cloneBoard(board);
@@ -628,10 +627,6 @@ function findUrgentDefense(board, color, opp, candidates, options) {
     else if (oppSum.openThrees >= 2) priority = 2;
     else if (oppSum.fours >= 1) priority = 3;
     else if (oppSum.openThrees >= 1) priority = 4;
-
-    if (priority < 999) {
-      debugLog.push({ x: c.x, y: c.y, prio: priority, sum: { ...oppSum } });
-    }
 
     if (priority < bestPriority) {
       const myBoard = cloneBoard(board);
@@ -646,10 +641,6 @@ function findUrgentDefense(board, color, opp, candidates, options) {
       bestPriority = priority;
       bestBlock = c;
     }
-  }
-
-  if (debugLog.length > 0) {
-    console.log('[AI Urgent Defense] threats:', debugLog, 'chose:', bestBlock);
   }
 
   if (bestPriority >= 999) return null;
