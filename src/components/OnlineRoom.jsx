@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { subscribeRoom, leaveRoom } from '../firebase/online.js';
-import { listFamily, getOpponentLabelMap, setOpponentLabel } from '../firebase/store.js';
+import { listFamily, addFamily, getOpponentLabelMap, setOpponentLabel } from '../firebase/store.js';
 import OnlineGameScreen from './OnlineGameScreen.jsx';
 
 export default function OnlineRoom({ roomCode, role, user, onExit }) {
@@ -11,6 +11,9 @@ export default function OnlineRoom({ roomCode, role, user, onExit }) {
   const [labelChosen, setLabelChosen] = useState(false);
   const [showLabelModal, setShowLabelModal] = useState(false);
   const [pendingOpponentUid, setPendingOpponentUid] = useState(null);
+  const [newFamilyName, setNewFamilyName] = useState('');
+  const [addingFamily, setAddingFamily] = useState(false);
+  const [addFamilyError, setAddFamilyError] = useState(null);
 
   useEffect(() => {
     const unsub = subscribeRoom(roomCode, (data) => {
@@ -69,6 +72,23 @@ export default function OnlineRoom({ roomCode, role, user, onExit }) {
     }
     setShowLabelModal(false);
     setLabelChosen(true);
+  };
+
+  const handleAddNewFamily = async () => {
+    const name = newFamilyName.trim();
+    if (!name) return;
+    setAddingFamily(true);
+    setAddFamilyError(null);
+    try {
+      const newFam = await addFamily(user, name);
+      setFamilyList(prev => [...prev, newFam]);
+      setNewFamilyName('');
+      await handleLabelChosen(newFam.id);
+    } catch (e) {
+      setAddFamilyError(e.message || '추가 실패');
+    } finally {
+      setAddingFamily(false);
+    }
   };
 
   const handleLeave = async () => {
@@ -200,6 +220,44 @@ export default function OnlineRoom({ roomCode, role, user, onExit }) {
                 {o.name}
               </button>
             ))}
+          </div>
+
+          <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 12, color: 'var(--fg-muted)', marginBottom: 6, fontFamily: 'JetBrains Mono, monospace' }}>
+              + 새 가족 추가
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input
+                type="text"
+                value={newFamilyName}
+                onChange={(e) => setNewFamilyName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleAddNewFamily(); }}
+                placeholder="이름 (예: 엄마)"
+                maxLength={20}
+                style={{
+                  flex: 1, padding: '8px 12px', fontSize: 13,
+                  background: 'var(--bg-2)', color: 'var(--fg)',
+                  border: '1px solid var(--border)', borderRadius: 3,
+                  fontFamily: 'inherit',
+                }}
+              />
+              <button
+                onClick={handleAddNewFamily}
+                disabled={!newFamilyName.trim() || addingFamily}
+                style={{
+                  padding: '8px 14px', fontSize: 12,
+                  background: 'var(--accent)', color: 'var(--bg)',
+                  border: 'none', borderRadius: 3,
+                  fontFamily: 'JetBrains Mono, monospace',
+                  cursor: 'pointer',
+                }}
+              >
+                {addingFamily ? '추가 중…' : '추가'}
+              </button>
+            </div>
+            {addFamilyError && (
+              <p style={{ fontSize: 12, color: '#e74c3c', marginTop: 6 }}>{addFamilyError}</p>
+            )}
           </div>
 
           <p style={{ fontSize: 11, color: 'var(--fg-muted)', fontFamily: 'JetBrains Mono, monospace', marginTop: 16, lineHeight: 1.5 }}>
