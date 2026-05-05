@@ -160,12 +160,12 @@ function scoreCellQuick(board, x, y, myColor, oppColor, style, options) {
   if (mySum.threes >= 1) s += PATTERN_SCORE.three;
 
   let d = 0;
-  if (opSum.five) d += PATTERN_SCORE.five * 0.95;
-  if (opSum.openFours >= 1) d += PATTERN_SCORE.open4 * 0.95;
-  d += Math.min(opSum.fours, 2) * PATTERN_SCORE.four * 0.5;
-  if (opSum.openThrees >= 2) d += PATTERN_SCORE.open4 * 0.65;
-  if (opSum.openThrees >= 1) d += PATTERN_SCORE.open3 * 0.9;
-  if (opSum.threes >= 1) d += PATTERN_SCORE.three * 0.9;
+  if (opSum.five) d += PATTERN_SCORE.five * 1.0;
+  if (opSum.openFours >= 1) d += PATTERN_SCORE.open4 * 1.0;
+  d += Math.min(opSum.fours, 2) * PATTERN_SCORE.four * 0.7;
+  if (opSum.openThrees >= 2) d += PATTERN_SCORE.open4 * 0.85;
+  if (opSum.openThrees >= 1) d += PATTERN_SCORE.open3 * 1.1;
+  if (opSum.threes >= 1) d += PATTERN_SCORE.three * 1.0;
 
   let myW = 1.0, opW = 1.0;
   if (style === 'attack') myW = 1.3;
@@ -177,7 +177,7 @@ function scoreCellQuick(board, x, y, myColor, oppColor, style, options) {
   const center = Math.max(0, 30 - dist);
   let total = s * myW + d * opW + center;
 
-  // 약점 공략: AI 공격 라인이 사용자 약한 방향에 형성될 때 보너스
+  // 약점 공략: AI 자기 공격 점수에만 보너스 (방어는 그대로 유지)
   if (options.exploitWeakness && options.dirWeights && s > 0) {
     const dirs = computeDirectionalStrength(my, x, y, myColor);
     const w = options.dirWeights;
@@ -188,7 +188,8 @@ function scoreCellQuick(board, x, y, myColor, oppColor, style, options) {
     if (multiplier > 1.0) {
       const strength = options.weaknessStrength || 1.2;
       const finalMultiplier = 1.0 + (multiplier - 1.0) * (strength - 1.0) / 0.2;
-      total = total * finalMultiplier;
+      const bonus = s * myW * (finalMultiplier - 1.0);
+      total += bonus;
     }
   }
   return total;
