@@ -152,6 +152,14 @@ export async function requestReplay({ roomCode, byUid, newConfig }) {
   });
 }
 
+export async function cancelReplayRequest({ roomCode }) {
+  const roomRef = ref(rtdb, `rooms/${roomCode}`);
+  await update(roomRef, {
+    replayRequest: null,
+    replayConfig: null,
+  });
+}
+
 export async function acceptReplay({ roomCode, hostColor, config }) {
   const roomRef = ref(rtdb, `rooms/${roomCode}`);
   await update(roomRef, {
