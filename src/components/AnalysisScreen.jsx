@@ -675,7 +675,7 @@ function PatternSection({ pattern }) {
       />
 
       <p style={{ fontSize: 11, color: 'var(--fg-muted)', fontFamily: 'JetBrains Mono, monospace', marginTop: 8, lineHeight: 1.5 }}>
-        ℹ Lv1·2 + 약점공략형 모드에서 이 분석을 기반으로 AI가 약점을 의식해 둡니다.
+        ℹ Lv4·5 + 약점공략형 모드에서 이 분석을 기반으로 AI가 약점을 의식해 둡니다.
       </p>
     </div>
   );
