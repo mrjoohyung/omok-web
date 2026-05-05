@@ -655,38 +655,6 @@ function findUrgentDefense(board, color, opp, candidates, options) {
   if (bestPriority >= 999) return null;
   return bestBlock;
 }
-    const oppBoard = cloneBoard(board);
-    oppBoard[c.y][c.x] = opp;
-    const oppSum = summarizeMove(oppBoard, c.x, c.y, opp);
-
-    let priority = 999;
-    if (oppSum.openFours >= 1) priority = 1;
-    else if (oppSum.openThrees >= 2) priority = 2;
-    else if (oppSum.fours >= 1) priority = 3;
-    else if (oppSum.openThrees >= 1) priority = 4;
-
-    if (priority < bestPriority) {
-      // 본인이 그 자리에서 5목/열린4 가능하면 자기 공격 우선
-      const myBoard = cloneBoard(board);
-      myBoard[c.y][c.x] = color;
-      const mySum = summarizeMove(myBoard, c.x, c.y, color);
-      if ((options.allowOverline ? mySum.five : mySum.exactlyFive)
-          || mySum.openFours >= 1) {
-        // 자기 공격이 더 강함 - 일단 후보로 기록만
-        if (priority < bestPriority) {
-          bestPriority = priority;
-          bestBlock = c;
-        }
-        continue;
-      }
-      bestPriority = priority;
-      bestBlock = c;
-    }
-  }
-
-  if (bestPriority >= 999) return null;
-  return bestBlock;
-}
 
 function findVCF(board, color, maxDepth, options) {
   if (Date.now() > options.deadline) return null;
