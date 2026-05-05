@@ -61,6 +61,7 @@ export function chooseAIMove(board, color, options) {
   const winMove = findImmediateWin(board, color, allCandidates, { renju, allowOverline });
   if (winMove) return winMove;
 
+  // 2) 즉시 차단 (상대 5목)
   const blockMove = findImmediateBlock(board, color, allCandidates, { allowOverline });
   if (blockMove) {
     if (color === BLACK && renju) {
@@ -71,7 +72,20 @@ export function chooseAIMove(board, color, options) {
     }
   }
 
-  // 3) VCF (Lv4-5)
+  // 2-b) 긴급 방어: 상대가 열린4/더블3/4/열린3 만드는 자리는 반드시 막음 (Lv3+)
+  if (level >= 3) {
+    const urgentBlock = findUrgentDefense(board, color, opp, allCandidates, { allowOverline, renju });
+    if (urgentBlock) {
+      if (color === BLACK && renju) {
+        const f = isForbidden(board, urgentBlock.x, urgentBlock.y, BLACK);
+        if (!f.forbidden) return urgentBlock;
+      } else {
+        return urgentBlock;
+      }
+    }
+  }
+
+  // 3) VCF (Lv4-5) — 시간 한도 내에서만
   if (cfg.vcfDepth > 0) {
     const vcfDeadline = Math.min(startTime + VCF_TIME_BUDGET, startTime + timeLimit);
     const vcf = findVCF(board, color, cfg.vcfDepth, { renju, allowOverline, deadline: vcfDeadline });
@@ -594,6 +608,47 @@ function findImmediateBlock(board, color, candidates, options) {
     if (options.allowOverline ? sum.five : sum.exactlyFive) return c;
   }
   return null;
+}
+
+// 긴급 방어: 상대가 두면 열린4/더블3/4/열린3 만드는 자리 막기
+// 우선순위: 열린 4 > 더블 3 > 닫힌 4 > 열린 3
+// 단, 본인이 그 자리에서 5목/열린4 가능하면 자기 공격이 더 강함
+function findUrgentDefense(board, color, opp, candidates, options) {
+  let bestBlock = null;
+  let bestPriority = 999;
+
+  for (const c of candidates) {
+    const oppBoard = cloneBoard(board);
+    oppBoard[c.y][c.x] = opp;
+    const oppSum = summarizeMove(oppBoard, c.x, c.y, opp);
+
+    let priority = 999;
+    if (oppSum.openFours >= 1) priority = 1;
+    else if (oppSum.openThrees >= 2) priority = 2;
+    else if (oppSum.fours >= 1) priority = 3;
+    else if (oppSum.openThrees >= 1) priority = 4;
+
+    if (priority < bestPriority) {
+      // 본인이 그 자리에서 5목/열린4 가능하면 자기 공격 우선
+      const myBoard = cloneBoard(board);
+      myBoard[c.y][c.x] = color;
+      const mySum = summarizeMove(myBoard, c.x, c.y, color);
+      if ((options.allowOverline ? mySum.five : mySum.exactlyFive)
+          || mySum.openFours >= 1) {
+        // 자기 공격이 더 강함 - 일단 후보로 기록만
+        if (priority < bestPriority) {
+          bestPriority = priority;
+          bestBlock = c;
+        }
+        continue;
+      }
+      bestPriority = priority;
+      bestBlock = c;
+    }
+  }
+
+  if (bestPriority >= 999) return null;
+  return bestBlock;
 }
 
 function findVCF(board, color, maxDepth, options) {
