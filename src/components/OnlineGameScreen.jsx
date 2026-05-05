@@ -95,6 +95,13 @@ export default function OnlineGameScreen({
     }
   }, []);
   useEffect(() => {
+    // 다시하기로 winner가 null로 돌아오면 statsSaved 리셋
+    if (!winner && statsSaved) {
+      setStatsSaved(false);
+    }
+  }, [winner, statsSaved]);
+
+  useEffect(() => {
     if (!winner) return;
     if (statsSaved) return;
     if (moves.length === 0) return;
