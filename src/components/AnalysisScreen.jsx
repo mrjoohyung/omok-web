@@ -88,6 +88,44 @@ export default function AnalysisScreen({ user, onBack, onAccountDeleted }) {
   const pvpTotal = pvpGames.length;
   const grandTotal = aiTotal + pvpTotal;
 
+  // 상대별 전적 직접 계산 - 본인 입장에서, self 제외
+  const familyStatsComputed = (() => {
+    const map = new Map();
+    for (const g of pvpGames) {
+      const blackIsSelf = g.blackLabel === 'self';
+      const whiteIsSelf = g.whiteLabel === 'self';
+      if (blackIsSelf === whiteIsSelf) continue;
+
+      const myColor = blackIsSelf ? 'black' : 'white';
+      const oppLabelId = blackIsSelf ? g.whiteLabel : g.blackLabel;
+      const oppLabelName = blackIsSelf ? g.whiteLabelName : g.blackLabelName;
+
+      if (!oppLabelId || oppLabelId === 'self') continue;
+
+      if (!map.has(oppLabelId)) {
+        map.set(oppLabelId, {
+          id: oppLabelId,
+          name: oppLabelName || '익명',
+          asBlack: { wins: 0, losses: 0, draws: 0, total: 0 },
+          asWhite: { wins: 0, losses: 0, draws: 0, total: 0 },
+          total: 0,
+        });
+      }
+      const slot = map.get(oppLabelId);
+      const colorKey = myColor === 'black' ? 'asBlack' : 'asWhite';
+      slot[colorKey].total++;
+      slot.total++;
+      if (g.winner === 'draw') {
+        slot[colorKey].draws++;
+      } else if (g.winner === myColor) {
+        slot[colorKey].wins++;
+      } else {
+        slot[colorKey].losses++;
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => b.total - a.total);
+  })();
+
   // 단계별 AI 통계도 직접 계산 (aiByLevel 캐시 대체)
   const aiByLevelComputed = (() => {
     const out = {};
@@ -380,28 +418,32 @@ export default function AnalysisScreen({ user, onBack, onAccountDeleted }) {
         )}
       </div>
 
+      {/* === 가족 대전 통계 === */}
       <div className="panel">
         <h2>2인용 — 상대별 전적</h2>
-        {familyStats.length === 0 ? (
+        <p style={{ fontSize: 11, color: 'var(--fg-muted)', fontFamily: 'JetBrains Mono, monospace', marginTop: -4, marginBottom: 12 }}>
+          내 입장에서의 승/패 (상대별로 집계)
+        </p>
+        {familyStatsComputed.length === 0 ? (
           <p style={{ color: 'var(--fg-muted)', fontSize: 13, padding: '12px 0', textAlign: 'center' }}>
             아직 2인용 기록이 없습니다.
           </p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {familyStats.map(f => {
+            {familyStatsComputed.map(f => {
               const wins = f.asBlack.wins + f.asWhite.wins;
               const winRate = f.total > 0 ? Math.round((wins / f.total) * 100) : 0;
               return (
                 <div key={f.id} style={cardStyle()}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
-                    <span style={{ fontSize: 15, fontWeight: 500, color: 'var(--fg)' }}>{f.name}</span>
+                    <span style={{ fontSize: 15, fontWeight: 500, color: 'var(--fg)' }}>vs {f.name}</span>
                     <span style={{ fontSize: 12, color: 'var(--accent)', fontFamily: 'JetBrains Mono, monospace' }}>
-                      {f.total}판 · 승률 {winRate}%
+                      {f.total}판 · 내 승률 {winRate}%
                     </span>
                   </div>
                   <div style={{ display: 'flex', gap: 18, fontSize: 12, fontFamily: 'JetBrains Mono, monospace', marginBottom: 10 }}>
-                    <ColorRow color="black" prefix="흑일 때" wins={f.asBlack.wins} losses={f.asBlack.losses} draws={f.asBlack.draws} />
-                    <ColorRow color="white" prefix="백일 때" wins={f.asWhite.wins} losses={f.asWhite.losses} draws={f.asWhite.draws} />
+                    <ColorRow color="black" prefix="내가 흑일 때" wins={f.asBlack.wins} losses={f.asBlack.losses} draws={f.asBlack.draws} />
+                    <ColorRow color="white" prefix="내가 백일 때" wins={f.asWhite.wins} losses={f.asWhite.losses} draws={f.asWhite.draws} />
                   </div>
                   <button onClick={() => handleDeleteByLabel(f.id, f.name)} style={smallDangerBtnStyle}>
                     이 라벨 게임 모두 삭제
