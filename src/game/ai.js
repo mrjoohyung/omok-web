@@ -13,16 +13,25 @@ const PATTERN_SCORE = {
   two: 30,
 };
 
+// Lv1=쉬움, Lv5=어려움 (정상)
+// Lv3+ : 위협 자리 강제 후보 포함 (threatForce)
+// Lv3+ : 반복심화 적용 (1차 빠르게, 2차 깊게)
 export const LEVEL_CONFIG = {
-  1: { depth: 4, candidates: 14, mistake: 0, vcfDepth: 7, label: '최상' },
-  2: { depth: 3, candidates: 12, mistake: 0, vcfDepth: 5, label: '상급' },
-  3: { depth: 2, candidates: 10, mistake: 0.05, vcfDepth: 0, label: '중급' },
-  4: { depth: 1, candidates: 12, mistake: 0.15, vcfDepth: 0, label: '초보' },
-  5: { depth: 1, candidates: 8, mistake: 0.30, vcfDepth: 0, label: '입문' },
+  1: { depth: 1, candidates: 5, mistake: 0.30, vcfDepth: 0, label: '입문',
+       threatForce: false, deepDepth: 0, deepCandidates: 0 },
+  2: { depth: 1, candidates: 8, mistake: 0.10, vcfDepth: 0, label: '초보',
+       threatForce: false, deepDepth: 0, deepCandidates: 0 },
+  3: { depth: 2, candidates: 10, mistake: 0.05, vcfDepth: 0, label: '중급',
+       threatForce: true, deepDepth: 3, deepCandidates: 5 },
+  4: { depth: 3, candidates: 15, mistake: 0, vcfDepth: 5, label: '상급',
+       threatForce: true, deepDepth: 5, deepCandidates: 5 },
+  5: { depth: 3, candidates: 12, mistake: 0, vcfDepth: 7, label: '최상',
+       threatForce: true, deepDepth: 5, deepCandidates: 6 },
 };
-const HARD_TIME_LIMIT = 4000;
-const VCF_TIME_BUDGET = 1500;
 
+// 응답 시간 한도
+const HARD_TIME_LIMIT = 3500; // 3.5초 안전망
+const VCF_TIME_BUDGET = 1500;
 export function chooseAIMove(board, color, options) {
   const {
     level = 3, style = 'balanced',
@@ -35,6 +44,15 @@ export function chooseAIMove(board, color, options) {
   const startTime = Date.now();
   const exploitOpts = { exploitWeakness, dirWeights, weaknessStrength };
   if (isBoardEmpty(board)) return openingMove(board, level);
+
+  // 정석 책 참조 (Lv3+, 첫 5수 이내)
+  if (level >= 3) {
+    const moveCount = countStones(board);
+    if (moveCount <= 4) {
+      const bookMove = lookupOpeningBook(board, color, moveCount);
+      if (bookMove) return bookMove;
+    }
+  }
 
   const allCandidates = generateCandidates(board);
   if (allCandidates.length === 0) return findAnyEmpty(board);
@@ -67,13 +85,23 @@ export function chooseAIMove(board, color, options) {
     if (candidates.length === 0) return findAnyEmpty(board);
   }
 
-  const topCandidates = candidates.slice(0, cfg.candidates);
+// 4-b) 위협 자리 강제 포함 (Lv3+)
+  let topCandidates = candidates.slice(0, cfg.candidates);
+  if (cfg.threatForce) {
+    const threats = findThreatPositions(board, color, opp, candidates, { allowOverline, renju });
+    const threatToAdd = threats
+      .filter(t => !topCandidates.some(tc => tc.x === t.x && tc.y === t.y))
+      .slice(0, 5);
+    topCandidates = [...topCandidates, ...threatToAdd];
+  }
 
+  // 5) 미니맥스 (반복심화)
+  const deadline = startTime + timeLimit;
   let best = null;
   let bestScore = -Infinity;
-  const ranked = [];
-  const deadline = startTime + timeLimit;
+  let ranked = [];
 
+  // 1차: cfg.depth 깊이로 모든 후보 평가
   for (const c of topCandidates) {
     if (Date.now() > deadline) break;
     const next = cloneBoard(board);
@@ -91,6 +119,32 @@ export function chooseAIMove(board, color, options) {
     if (val > bestScore) { bestScore = val; best = c; }
   }
 
+  // 2차: Lv3+ 에서 상위 deepCandidates개만 deepDepth로 재평가
+  if (cfg.deepDepth > cfg.depth && cfg.deepCandidates > 0 && Date.now() < deadline) {
+    ranked.sort((a, b) => b.mmScore - a.mmScore);
+    const deepTop = ranked.slice(0, cfg.deepCandidates);
+    let deepBest = null;
+    let deepBestScore = -Infinity;
+    const deepRanked = [];
+    for (const c of deepTop) {
+      if (Date.now() > deadline) break;
+      const next = cloneBoard(board);
+      next[c.y][c.x] = color;
+      const val = -minimax(
+        next, cfg.deepDepth - 1, -Infinity, Infinity, opp, color,
+        { renju, allowOverline, style, deadline, ...exploitOpts }
+      );
+      deepRanked.push({ ...c, mmScore: val });
+      if (val > deepBestScore) { deepBestScore = val; deepBest = c; }
+    }
+    if (deepBest && deepRanked.length > 0) {
+      best = deepBest;
+      bestScore = deepBestScore;
+      ranked = deepRanked;
+    }
+  }
+
+  // 6) 실수율 적용
   if (cfg.mistake > 0 && ranked.length >= 2 && Math.random() < cfg.mistake) {
     ranked.sort((a, b) => b.mmScore - a.mmScore);
     const idx = Math.min(ranked.length - 1, 1 + (Math.random() < 0.5 ? 0 : 1));
@@ -98,6 +152,78 @@ export function chooseAIMove(board, color, options) {
   }
 
   return best ? { x: best.x, y: best.y } : findAnyEmpty(board);
+}
+
+// =======================================================================
+// 위협 자리 찾기 (Threat Space)
+// =======================================================================
+function findThreatPositions(board, myColor, oppColor, candidates, options) {
+  const out = [];
+  const seen = new Set();
+
+  for (const c of candidates) {
+    const key = `${c.x},${c.y}`;
+    if (seen.has(key)) continue;
+
+    const myBoard = cloneBoard(board);
+    myBoard[c.y][c.x] = myColor;
+    const myInfo = countPatternsAt(myBoard, c.x, c.y, myColor);
+    if (myInfo.fours >= 1 || myInfo.openThrees >= 2) {
+      out.push({ ...c, threat: 'attack-strong' });
+      seen.add(key);
+      continue;
+    }
+
+    const oppBoard = cloneBoard(board);
+    oppBoard[c.y][c.x] = oppColor;
+    const oppInfo = countPatternsAt(oppBoard, c.x, c.y, oppColor);
+    if (oppInfo.fours >= 1 || oppInfo.openThrees >= 2) {
+      out.push({ ...c, threat: 'defense-must' });
+      seen.add(key);
+      continue;
+    }
+
+    if (myInfo.openThrees >= 1) {
+      out.push({ ...c, threat: 'attack-open3' });
+      seen.add(key);
+      continue;
+    }
+
+    if (oppInfo.openThrees >= 1) {
+      out.push({ ...c, threat: 'defense-open3' });
+      seen.add(key);
+    }
+  }
+
+  const priority = { 'defense-must': 0, 'attack-strong': 1, 'defense-open3': 2, 'attack-open3': 3 };
+  out.sort((a, b) => priority[a.threat] - priority[b.threat]);
+  return out;
+}
+
+function countPatternsAt(board, x, y, color) {
+  const size = board.length;
+  const dirs = [[1,0],[0,1],[1,1],[1,-1]];
+  let fours = 0, openThrees = 0;
+
+  for (const [dx, dy] of dirs) {
+    let count = 1;
+    let openL = false, openR = false;
+    for (let i = 1; i < 5; i++) {
+      const nx = x + dx*i, ny = y + dy*i;
+      if (nx<0||ny<0||nx>=size||ny>=size) break;
+      if (board[ny][nx] === color) count++;
+      else { if (board[ny][nx] === EMPTY) openR = true; break; }
+    }
+    for (let i = 1; i < 5; i++) {
+      const nx = x - dx*i, ny = y - dy*i;
+      if (nx<0||ny<0||nx>=size||ny>=size) break;
+      if (board[ny][nx] === color) count++;
+      else { if (board[ny][nx] === EMPTY) openL = true; break; }
+    }
+    if (count === 4) fours++;
+    else if (count === 3 && openL && openR) openThrees++;
+  }
+  return { fours, openThrees };
 }
 
 export function evaluateBoard(board, color, style, options) {
@@ -154,18 +280,26 @@ function scoreCellQuick(board, x, y, myColor, oppColor, style, options) {
   let s = 0;
   if (mySum.five) s += PATTERN_SCORE.five;
   if (mySum.openFours >= 1) s += PATTERN_SCORE.open4;
-  s += Math.min(mySum.fours, 2) * PATTERN_SCORE.four * 0.5;
-  if (mySum.openThrees >= 2) s += PATTERN_SCORE.open4 * 0.7;
+  s += Math.min(mySum.fours, 2) * PATTERN_SCORE.four * 0.7;  // 닫힌 4 강화
+  // 더블 3 (쌍삼) 강화 - 거의 이기는 패턴
+  if (mySum.openThrees >= 2) s += PATTERN_SCORE.open4 * 0.95;
   if (mySum.openThrees >= 1) s += PATTERN_SCORE.open3;
   if (mySum.threes >= 1) s += PATTERN_SCORE.three;
+  // 삼-사 결합: 4 + 3 동시 (강력한 이중 위협)
+  if (mySum.fours >= 1 && (mySum.openThrees >= 1 || mySum.threes >= 1)) {
+    s += PATTERN_SCORE.open4 * 0.5;
+  }
 
   let d = 0;
   if (opSum.five) d += PATTERN_SCORE.five * 1.0;
   if (opSum.openFours >= 1) d += PATTERN_SCORE.open4 * 1.0;
-  d += Math.min(opSum.fours, 2) * PATTERN_SCORE.four * 0.7;
-  if (opSum.openThrees >= 2) d += PATTERN_SCORE.open4 * 0.85;
+  d += Math.min(opSum.fours, 2) * PATTERN_SCORE.four * 0.85;
+  if (opSum.openThrees >= 2) d += PATTERN_SCORE.open4 * 0.95;
   if (opSum.openThrees >= 1) d += PATTERN_SCORE.open3 * 1.1;
   if (opSum.threes >= 1) d += PATTERN_SCORE.three * 1.0;
+  if (opSum.fours >= 1 && (opSum.openThrees >= 1 || opSum.threes >= 1)) {
+    d += PATTERN_SCORE.open4 * 0.5;
+  }
 
   let myW = 1.0, opW = 1.0;
   if (style === 'attack') myW = 1.3;
@@ -304,6 +438,83 @@ function isBoardEmpty(board) {
     }
   }
   return true;
+}
+
+function countStones(board) {
+  let n = 0;
+  for (let y = 0; y < board.length; y++) {
+    for (let x = 0; x < board.length; x++) {
+      if (board[y][x] !== EMPTY) n++;
+    }
+  }
+  return n;
+}
+
+// =======================================================================
+// 정석 책 (Opening Book) - 미니 버전
+// =======================================================================
+const WHITE_RESPONSES_TO_CENTER = [
+  { x: 0, y: -1 },
+  { x: 1, y: 0 },
+  { x: 1, y: -1 },
+  { x: 1, y: 1 },
+];
+
+function blackThirdMoves(whiteX, whiteY) {
+  if (whiteX === 0 || whiteY === 0) {
+    return [
+      { x: -whiteX, y: -whiteY },
+      { x: whiteX + (whiteY === 0 ? 0 : 1), y: whiteY + (whiteX === 0 ? 0 : 1) },
+      { x: 1, y: 1 },
+      { x: -1, y: -1 },
+    ];
+  }
+  return [
+    { x: -whiteX, y: -whiteY },
+    { x: whiteX, y: 0 },
+    { x: 0, y: whiteY },
+    { x: whiteX * 2, y: whiteY * 2 },
+  ];
+}
+
+function lookupOpeningBook(board, color, moveCount) {
+  const size = board.length;
+  const c = Math.floor(size / 2);
+
+  const blacks = [], whites = [];
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      if (board[y][x] === BLACK) blacks.push({ x, y });
+      else if (board[y][x] === WHITE) whites.push({ x, y });
+    }
+  }
+
+  if (color === WHITE && moveCount === 1 && blacks.length === 1) {
+    const b = blacks[0];
+    if (b.x !== c || b.y !== c) return null;
+    const choice = WHITE_RESPONSES_TO_CENTER[
+      Math.floor(Math.random() * WHITE_RESPONSES_TO_CENTER.length)
+    ];
+    const move = { x: c + choice.x, y: c + choice.y };
+    if (board[move.y]?.[move.x] === EMPTY) return move;
+  }
+
+  if (color === BLACK && moveCount === 2 && blacks.length === 1 && whites.length === 1) {
+    const b = blacks[0];
+    if (b.x !== c || b.y !== c) return null;
+    const w = whites[0];
+    const dx = w.x - c, dy = w.y - c;
+    if (Math.abs(dx) > 1 || Math.abs(dy) > 1) return null;
+    const responses = blackThirdMoves(dx, dy);
+    const valid = responses
+      .map(r => ({ x: c + r.x, y: c + r.y }))
+      .filter(p => p.x >= 0 && p.x < size && p.y >= 0 && p.y < size && board[p.y][p.x] === EMPTY);
+    if (valid.length > 0) {
+      return valid[Math.floor(Math.random() * valid.length)];
+    }
+  }
+
+  return null;
 }
 
 function findAnyEmpty(board) {
