@@ -14,11 +14,11 @@ const PATTERN_SCORE = {
 };
 
 export const LEVEL_CONFIG = {
-  1: { depth: 1, candidates: 8, mistake: 0.30, vcfDepth: 0, label: '입문' },
-  2: { depth: 1, candidates: 12, mistake: 0.15, vcfDepth: 0, label: '초보' },
+  1: { depth: 4, candidates: 14, mistake: 0, vcfDepth: 7, label: '최상' },
+  2: { depth: 3, candidates: 12, mistake: 0, vcfDepth: 5, label: '상급' },
   3: { depth: 2, candidates: 10, mistake: 0.05, vcfDepth: 0, label: '중급' },
-  4: { depth: 3, candidates: 12, mistake: 0, vcfDepth: 5, label: '상급' },
-  5: { depth: 4, candidates: 14, mistake: 0, vcfDepth: 7, label: '최상' },
+  4: { depth: 1, candidates: 12, mistake: 0.15, vcfDepth: 0, label: '초보' },
+  5: { depth: 1, candidates: 8, mistake: 0.30, vcfDepth: 0, label: '입문' },
 };
 const HARD_TIME_LIMIT = 4000;
 const VCF_TIME_BUDGET = 1500;
