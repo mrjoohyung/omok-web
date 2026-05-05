@@ -7,7 +7,7 @@ import {
 import { evaluateBoard } from '../game/ai.js';
 import {
   makeMove, endGame, resignGame, leaveRoom,
-  requestReplay, acceptReplay, declineReplay,
+  requestReplay, acceptReplay, declineReplay, cancelReplayRequest,
   updateHeartbeat, forceTerminate, timeoutDraw,
   passTurnOnTimeout,
 } from '../firebase/online.js';
@@ -778,12 +778,33 @@ export default function OnlineGameScreen({
         </div>
       )}
 
+      {/* 다시 두기 요청 보냈음 (대기) */}
       {replayRequested && roomData.replayRequest && roomData.replayRequest.byUid === user.uid && (
         <div className="modal-backdrop">
-          <div className="modal">
+          <div className="modal" style={{ position: 'relative' }}>
+            <button
+              onClick={async () => {
+                try { await cancelReplayRequest({ roomCode }); } catch (e) {}
+                setReplayRequested(false);
+              }}
+              style={{
+                position: 'absolute', top: 8, right: 12,
+                background: 'transparent', border: 'none',
+                color: 'var(--fg-muted)', fontSize: 20,
+                cursor: 'pointer', padding: '4px 8px',
+                lineHeight: 1,
+              }}
+              title="요청 취소"
+            >
+              ×
+            </button>
             <h3>다시 두기 요청 중…</h3>
             <p>{opponentLabelName}의 응답을 기다리고 있습니다.</p>
             <div className="modal-actions">
+              <button className="secondary-btn" onClick={async () => {
+                try { await cancelReplayRequest({ roomCode }); } catch (e) {}
+                setReplayRequested(false);
+              }}>요청 취소</button>
               <button className="secondary-btn" onClick={onExit}>나가기</button>
             </div>
           </div>
