@@ -17,21 +17,22 @@ const PATTERN_SCORE = {
 // Lv3+ : 위협 자리 강제 후보 포함 (threatForce)
 // Lv3+ : 반복심화 적용 (1차 빠르게, 2차 깊게)
 export const LEVEL_CONFIG = {
-  1: { depth: 1, candidates: 5, mistake: 0.30, vcfDepth: 0, label: '입문',
+  1: { depth: 1, candidates: 5, mistake: 0.30, vcfDepth: 0, vctDepth: 0, label: '입문',
        threatForce: false, deepDepth: 0, deepCandidates: 0 },
-  2: { depth: 1, candidates: 8, mistake: 0.10, vcfDepth: 0, label: '초보',
+  2: { depth: 1, candidates: 8, mistake: 0.10, vcfDepth: 0, vctDepth: 0, label: '초보',
        threatForce: false, deepDepth: 0, deepCandidates: 0 },
-  3: { depth: 2, candidates: 10, mistake: 0.05, vcfDepth: 0, label: '중급',
+  3: { depth: 2, candidates: 10, mistake: 0.05, vcfDepth: 0, vctDepth: 0, label: '중급',
        threatForce: true, deepDepth: 3, deepCandidates: 5 },
-  4: { depth: 3, candidates: 15, mistake: 0, vcfDepth: 5, label: '상급',
+  4: { depth: 3, candidates: 15, mistake: 0, vcfDepth: 5, vctDepth: 4, label: '상급',
        threatForce: true, deepDepth: 5, deepCandidates: 5 },
-  5: { depth: 3, candidates: 12, mistake: 0, vcfDepth: 7, label: '최상',
+  5: { depth: 3, candidates: 12, mistake: 0, vcfDepth: 7, vctDepth: 5, label: '최상',
        threatForce: true, deepDepth: 5, deepCandidates: 6 },
 };
 
 // 응답 시간 한도
-const HARD_TIME_LIMIT = 3500; // 3.5초 안전망
-const VCF_TIME_BUDGET = 1500;
+const HARD_TIME_LIMIT = 4000; // 4초 안전망
+const VCF_TIME_BUDGET = 1200;
+const VCT_TIME_BUDGET = 1000;
 export function chooseAIMove(board, color, options) {
   const {
     level = 3, style = 'balanced',
@@ -70,10 +71,20 @@ export function chooseAIMove(board, color, options) {
     }
   }
 
+  // 3) VCF (Lv4-5)
   if (cfg.vcfDepth > 0) {
     const vcfDeadline = Math.min(startTime + VCF_TIME_BUDGET, startTime + timeLimit);
     const vcf = findVCF(board, color, cfg.vcfDepth, { renju, allowOverline, deadline: vcfDeadline });
     if (vcf) return vcf;
+  }
+
+  // 3-b) VCT (Lv4-5) — 4 + 3 결합 연쇄로 이기는 길
+  if (cfg.vctDepth > 0) {
+    const vctDeadline = Math.min(startTime + VCF_TIME_BUDGET + VCT_TIME_BUDGET, startTime + timeLimit);
+    if (Date.now() < vctDeadline) {
+      const vct = findVCT(board, color, cfg.vctDepth, { renju, allowOverline, deadline: vctDeadline });
+      if (vct) return vct;
+    }
   }
 
   const scored = allCandidates
@@ -95,13 +106,15 @@ export function chooseAIMove(board, color, options) {
     topCandidates = [...topCandidates, ...threatToAdd];
   }
 
-  // 5) 미니맥스 (반복심화)
+  // 5) 미니맥스 (반복심화 적용 가능)
   const deadline = startTime + timeLimit;
+  // Transposition Table - 같은 보드 상태 재방문 캐싱 (Lv4+)
+  const tt = (cfg.depth >= 3 || cfg.deepDepth >= 3) ? new Map() : null;
   let best = null;
   let bestScore = -Infinity;
   let ranked = [];
 
-  // 1차: cfg.depth 깊이로 모든 후보 평가
+  // 1차 탐색: cfg.depth 깊이로 모든 후보 평가
   for (const c of topCandidates) {
     if (Date.now() > deadline) break;
     const next = cloneBoard(board);
@@ -112,14 +125,14 @@ export function chooseAIMove(board, color, options) {
     } else {
       val = -minimax(
         next, cfg.depth - 1, -Infinity, Infinity, opp, color,
-        { renju, allowOverline, style, deadline, ...exploitOpts }
+        { renju, allowOverline, style, deadline, tt, ...exploitOpts }
       );
     }
     ranked.push({ ...c, mmScore: val });
     if (val > bestScore) { bestScore = val; best = c; }
   }
 
-  // 2차: Lv3+ 에서 상위 deepCandidates개만 deepDepth로 재평가
+  // 2차 탐색 (반복심화): Lv3+ 에서 상위 deepCandidates개만 deepDepth 깊이로 재평가
   if (cfg.deepDepth > cfg.depth && cfg.deepCandidates > 0 && Date.now() < deadline) {
     ranked.sort((a, b) => b.mmScore - a.mmScore);
     const deepTop = ranked.slice(0, cfg.deepCandidates);
@@ -132,7 +145,7 @@ export function chooseAIMove(board, color, options) {
       next[c.y][c.x] = color;
       const val = -minimax(
         next, cfg.deepDepth - 1, -Infinity, Infinity, opp, color,
-        { renju, allowOverline, style, deadline, ...exploitOpts }
+        { renju, allowOverline, style, deadline, tt, ...exploitOpts }
       );
       deepRanked.push({ ...c, mmScore: val });
       if (val > deepBestScore) { deepBestScore = val; deepBest = c; }
@@ -361,6 +374,18 @@ function minimax(board, depth, alpha, beta, currentColor, evalForColor, ctx) {
   if (depth === 0 || Date.now() > ctx.deadline) {
     return evaluateBoard(board, evalForColor, ctx.style, { allowOverline: ctx.allowOverline });
   }
+
+  // === Transposition Table 조회 ===
+  const ttKey = ctx.tt ? hashBoard(board) + ':' + currentColor + ':' + depth : null;
+  if (ttKey && ctx.tt.has(ttKey)) {
+    const entry = ctx.tt.get(ttKey);
+    if (entry.depth >= depth) {
+      if (entry.flag === 'exact') return entry.value;
+      if (entry.flag === 'lower' && entry.value >= beta) return entry.value;
+      if (entry.flag === 'upper' && entry.value <= alpha) return entry.value;
+    }
+  }
+
   const opp = currentColor === BLACK ? WHITE : BLACK;
   const candidates = generateCandidates(board);
   const scored = candidates
@@ -378,6 +403,8 @@ function minimax(board, depth, alpha, beta, currentColor, evalForColor, ctx) {
 
   const maximizing = currentColor === evalForColor;
   let best = maximizing ? -Infinity : Infinity;
+  const origAlpha = alpha;
+  const origBeta = beta;
 
   for (const c of useCandidates) {
     if (Date.now() > ctx.deadline) break;
@@ -399,7 +426,28 @@ function minimax(board, depth, alpha, beta, currentColor, evalForColor, ctx) {
     }
     if (beta <= alpha) break;
   }
+
+  // === Transposition Table 저장 ===
+  if (ttKey && ctx.tt && ctx.tt.size < 50000) {
+    let flag = 'exact';
+    if (best <= origAlpha) flag = 'upper';
+    else if (best >= origBeta) flag = 'lower';
+    ctx.tt.set(ttKey, { value: best, depth, flag });
+  }
+
   return best;
+}
+
+// 보드 해시 (Transposition Table 키)
+function hashBoard(board) {
+  const size = board.length;
+  let hash = '';
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      hash += board[y][x] === EMPTY ? '.' : (board[y][x] === BLACK ? 'B' : 'W');
+    }
+  }
+  return hash;
 }
 
 function generateCandidates(board) {
@@ -604,6 +652,7 @@ function vcfRecurse(board, color, depth, options) {
   return true;
 }
 
+// 공격 후보만: "두면 4 또는 5목이 되는 자리"
 function filterAttackCandidates(board, color, options) {
   const cands = generateCandidates(board);
   const out = [];
@@ -614,6 +663,113 @@ function filterAttackCandidates(board, color, options) {
     if (sum.five || sum.openFours >= 1 || sum.fours >= 1) out.push(c);
   }
   return out;
+}
+
+// VCT 공격 후보: 4 이상 OR 열린3 OR 3+4 결합
+function filterVCTCandidates(board, color, options) {
+  const cands = generateCandidates(board);
+  const out = [];
+  for (const c of cands) {
+    const next = cloneBoard(board);
+    next[c.y][c.x] = color;
+    const sum = summarizeMove(next, c.x, c.y, color);
+    if (sum.five) { out.push({ ...c, type: 'win', sum }); continue; }
+    if (sum.openFours >= 1) { out.push({ ...c, type: 'open4', sum }); continue; }
+    if (sum.fours >= 1) {
+      if (sum.openThrees >= 1 || sum.threes >= 1) {
+        out.push({ ...c, type: '4+3', sum });
+      } else {
+        out.push({ ...c, type: 'four', sum });
+      }
+      continue;
+    }
+    if (sum.openThrees >= 2) { out.push({ ...c, type: 'double3', sum }); continue; }
+    if (sum.openThrees >= 1) { out.push({ ...c, type: 'open3', sum }); continue; }
+  }
+  const priority = { 'win': 0, 'open4': 1, '4+3': 2, 'double3': 3, 'four': 4, 'open3': 5 };
+  out.sort((a, b) => priority[a.type] - priority[b.type]);
+  return out;
+}
+
+// =======================================================================
+// VCT (Victory by Continuous Threat): 4+3 결합으로 이기는 길
+// =======================================================================
+function findVCT(board, color, maxDepth, options) {
+  if (Date.now() > options.deadline) return null;
+  const cands = filterVCTCandidates(board, color, options);
+  for (const c of cands) {
+    if (Date.now() > options.deadline) return null;
+    if (color === BLACK && options.renju && isForbidden(board, c.x, c.y, BLACK).forbidden) continue;
+    const next = cloneBoard(board);
+    next[c.y][c.x] = color;
+    const sum = c.sum;
+    if (options.allowOverline ? sum.five : sum.exactlyFive) return c;
+    if (sum.openFours >= 1 || sum.fours >= 1 || sum.openThrees >= 2) {
+      if (vctRecurse(next, color, maxDepth - 1, options)) return c;
+    }
+  }
+  return null;
+}
+
+function vctRecurse(board, color, depth, options) {
+  if (depth <= 0) return false;
+  if (Date.now() > options.deadline) return false;
+
+  const opp = color === BLACK ? WHITE : BLACK;
+  const oppCands = generateCandidates(board);
+  for (const c of oppCands) {
+    const tmp = cloneBoard(board);
+    tmp[c.y][c.x] = opp;
+    const sum = summarizeMove(tmp, c.x, c.y, opp);
+    if (options.allowOverline ? sum.five : sum.exactlyFive) return false;
+  }
+
+  const blockSpots = findThreatBlockSpots(board, color, options);
+  if (blockSpots.length === 0) return false;
+  const limitedSpots = blockSpots.slice(0, 6);
+
+  for (const spot of limitedSpots) {
+    if (Date.now() > options.deadline) return false;
+    const afterBlock = cloneBoard(board);
+    afterBlock[spot.y][spot.x] = opp;
+
+    let canContinue = false;
+    const myCands = filterVCTCandidates(afterBlock, color, options);
+    const limitedCands = myCands.slice(0, 5);
+
+    for (const c of limitedCands) {
+      if (Date.now() > options.deadline) return false;
+      if (color === BLACK && options.renju && isForbidden(afterBlock, c.x, c.y, BLACK).forbidden) continue;
+      const next = cloneBoard(afterBlock);
+      next[c.y][c.x] = color;
+      const sum = c.sum;
+      if (options.allowOverline ? sum.five : sum.exactlyFive) { canContinue = true; break; }
+      if (sum.openFours >= 1 || sum.fours >= 1 || sum.openThrees >= 2) {
+        if (vctRecurse(next, color, depth - 1, options)) { canContinue = true; break; }
+      }
+    }
+    if (!canContinue) return false;
+  }
+  return true;
+}
+
+function findThreatBlockSpots(board, color, options) {
+  const size = board.length;
+  const spots = new Map();
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      if (board[y][x] !== EMPTY) continue;
+      const next = cloneBoard(board);
+      next[y][x] = color;
+      const sum = summarizeMove(next, x, y, color);
+      if ((options.allowOverline ? sum.five : sum.exactlyFive)
+          || sum.openFours >= 1 || sum.fours >= 1
+          || sum.openThrees >= 2) {
+        spots.set(y * size + x, { x, y });
+      }
+    }
+  }
+  return Array.from(spots.values());
 }
 
 function findFourBlockSpots(board, color, options) {
