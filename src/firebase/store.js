@@ -407,3 +407,91 @@ export async function setOpponentLabel(user, opponentUid, labelId) {
     [`opponentLabels.${opponentUid}`]: labelId,
   }, { merge: true });
 }
+// =======================================================================
+// 게스트 데이터 → 로그인 계정으로 이전
+// =======================================================================
+
+export async function getGuestDataPreview() {
+  const guestIds = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key?.startsWith('omok-guest-') && key?.endsWith('-family')) {
+      const id = key.replace('omok-', '').replace('-family', '');
+      guestIds.push(id);
+    }
+  }
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key?.startsWith('omok-guest-') && key?.endsWith('-games')) {
+      const id = key.replace('omok-', '').replace('-games', '');
+      if (!guestIds.includes(id)) guestIds.push(id);
+    }
+  }
+
+  let totalGames = 0;
+  let totalFamily = 0;
+  for (const gid of guestIds) {
+    const games = localStorage.getItem(`omok-${gid}-games`);
+    if (games) {
+      try {
+        const arr = JSON.parse(games);
+        if (Array.isArray(arr)) totalGames += arr.length;
+      } catch (e) {}
+    }
+    const fam = localStorage.getItem(`omok-${gid}-family`);
+    if (fam) {
+      try {
+        const arr = JSON.parse(fam);
+        if (Array.isArray(arr)) totalFamily += arr.length;
+      } catch (e) {}
+    }
+  }
+  return { guestIds, totalGames, totalFamily, hasData: totalGames > 0 || totalFamily > 0 };
+}
+
+export async function migrateGuestDataToAccount(user) {
+  if (isGuest(user)) throw new Error('게스트 모드에서는 이전 불가');
+  const preview = await getGuestDataPreview();
+  if (!preview.hasData) return { migrated: 0, families: 0 };
+
+  let migratedGames = 0;
+  let migratedFamilies = 0;
+
+  for (const gid of preview.guestIds) {
+    const famRaw = localStorage.getItem(`omok-${gid}-family`);
+    if (famRaw) {
+      try {
+        const famList = JSON.parse(famRaw);
+        const existingFam = await listFamily(user);
+        const existingNames = new Set(existingFam.map(f => f.name));
+        for (const f of famList) {
+          if (existingNames.has(f.name)) continue;
+          try {
+            await addFamily(user, f.name);
+            migratedFamilies++;
+          } catch (e) { console.warn(e); }
+        }
+      } catch (e) { console.warn(e); }
+    }
+    const gamesRaw = localStorage.getItem(`omok-${gid}-games`);
+    if (gamesRaw) {
+      try {
+        const gameList = JSON.parse(gamesRaw);
+        for (const g of gameList) {
+          try {
+            await saveGameResult(user, g);
+            migratedGames++;
+          } catch (e) { console.warn(e); }
+        }
+      } catch (e) { console.warn(e); }
+    }
+    localStorage.removeItem(`omok-${gid}-family`);
+    localStorage.removeItem(`omok-${gid}-games`);
+    localStorage.removeItem(`omok-${gid}-stats`);
+    localStorage.removeItem(`omok-${gid}-aiStatsByLevel`);
+    localStorage.removeItem(`omok-${gid}-current`);
+    localStorage.removeItem(`omok-${gid}-oppmap`);
+  }
+
+  return { migrated: migratedGames, families: migratedFamilies };
+}
